@@ -1,0 +1,48 @@
+OSMNX:
+- custom filter for layers and buildings
+- can perform multiprocessing
+-isochrome map
+
+
+- Digraph to represent the complexities of the street network
+
+------
+
+
+Summary
+The issue was a Coordinate Reference System (CRS) mismatch:
+
+Your graph was in WGS84 (EPSG:4326 - lat/lon coordinates)
+Your raster was in ETRS89 LAEA Europe (EPSG:3035 - projected meters)
+The solution was to:
+
+Reproject the graph to EPSG:3035 to match the raster
+Load the elevation data on the projected graph
+Calculate edge grades on the projected graph
+Reproject back to WGS84 for consistency
+The 0.0% grade result is now correct because Sliema, Malta is genuinely a flat coastal area where all the street network nodes are at the same elevation level in this dataset
+
+----
+
+Resources
+
+OSMNX
+https://osmnx.readthedocs.io/en/stable/
+https://github.com/gboeing/osmnx-examples/tree/main/notebooks
+https://osmnx.readthedocs.io/en/stable/getting-started.html
+https://osmnx.readthedocs.io/en/stable/user-reference.html
+
+https://wiki.openstreetmap.org/wiki/Map_features
+
+
+Network X
+https://networkx.org/
+https://www.youtube.com/watch?v=VetBkjcm9Go
+
+
+
+Elevation
+https://www.eea.europa.eu/data-and-maps/data/elevation-breakdown/elevation-breakdown-raster-1-km-zipped-tiff-file/elevation-breakdown-raster-1-km-zipped-tiff-file
+https://www.opentopodata.org/
+
+

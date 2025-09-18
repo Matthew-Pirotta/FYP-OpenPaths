@@ -1,0 +1,7 @@
+*Topography Data source*
+
+OpenTop
+eudem25m 	25 m 	Europe. 	EEA
+
+Google maps
+resolution: 610.8129272460938
