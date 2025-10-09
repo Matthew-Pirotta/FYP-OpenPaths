@@ -24,6 +24,15 @@ The 0.0% grade result is now correct because Sliema, Malta is genuinely a flat c
 
 ----
 
+Malta's grade typically ranges form 0 to 0.5 (0.3degrees)
+A a grade of 2.5 is 1.43 degrees
+
+----
+
+Parking data of where parking bays are is scarce in malta
+
+---
+
 Resources
 
 OSMNX
@@ -52,4 +61,7 @@ https://nso.gov.mt/transport-hub-road-traffic-accidents/
 Socio-Economic Info
 https://nso.gov.mt/themes_publications/regional-statistics-malta-2024-edition/?utm_source=chatgpt.com
 
-
+Topogrpahy
+COP30, from OpenTopography (resolution of 30 meters)
+https://en-gb.topographic-map.com/map-2rs8/Malta/?center=35.90362%2C14.50312&zoom=12   (Malta's average elevation is 4m) 
+(with a resolution of 30meters, average grade = (4/30) * 100 =  13.3%, THIS IS LOGICALLY FLAWED, grade is relative to local)
