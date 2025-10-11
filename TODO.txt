@@ -3,3 +3,8 @@
 - is it worth expanding the current maltese bike network if its inefficient?
 
 - normalise road length so that it dominates less?
+- can cycle on undeveloped roads?
+- how to handle 'unsuitable' roads
+- how to handle 'shared_lane', should it be discarded or combined with 'lane'?
+- cant cycle in tunnels, or highways (maybe)
+- when collapsing the lane list, should it be safest, unsafest?
