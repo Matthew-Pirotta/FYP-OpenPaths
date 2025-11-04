@@ -1,4 +1,3 @@
-- Read maltese fyp lit
 - Get some consensus of how much ppl prefer detour for safety over risky direct.
 - is it worth expanding the current maltese bike network if its inefficient?
 
@@ -8,3 +7,15 @@
 - how to handle 'shared_lane', should it be discarded or combined with 'lane'?
 - cant cycle in tunnels, or highways (maybe)
 - when collapsing the lane list, should it be safest, unsafest?
+
+-------
+
+- road selection not/priority
+- heurisitc road suggestion
+- grade display?
+----------
+URECA:
+- Unpublished secondary data 11 - 13
+- 17
+- 20?
+- Part3
