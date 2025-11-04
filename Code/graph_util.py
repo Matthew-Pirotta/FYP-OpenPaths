@@ -61,6 +61,7 @@ def select_primary_label(highway_list:list[str]|str, priority_order:list) -> str
     if not isinstance(highway_list, list):
         return highway_list
     
+    print(highway_list)
     # Find highest priority highway type
     best_highway = highway_list[0]  # fallback
     best_priority = -1
@@ -134,8 +135,6 @@ def clean_graph(G:MultiDiGraph):
     merge_semantically_equivalent_road_tags(G)
     collapse_road_tag_lists(G)
     
-
-
 
 #TODO
 def bike_safety_classification(G_bike:MultiDiGraph):
