@@ -54,10 +54,8 @@ def color_hist(ax, values, bins, cmap, norm, title, xlabel, ylabel="Frequency", 
         color = cmap(norm(0.5 * (left + right)))
         patch.set_facecolor(color)
 
-def plot_elevation_grade(G):
+def plot_elevation(G):
     """Visualize elevation and grade distributions for a graph."""
-    cmap = plt.cm.coolwarm
-    norm = mcolors.Normalize(vmin=-0.1, vmax=0.1, clip=False)
 
     # -------------------------------
     # Elevation distribution
@@ -74,6 +72,16 @@ def plot_elevation_grade(G):
     plt.ylabel("Frequency")
     plt.grid(True, alpha=0.3)
     plt.show()
+
+    #Elevation Map    
+    nc = ox.plot.get_node_colors_by_attr(G, "elevation", cmap="plasma")
+    fig, ax = ox.plot.plot_graph(G, node_color=nc, node_size=5, edge_color="#333333", bgcolor="k")
+
+
+
+def plot_grades(G):
+    cmap = plt.cm.coolwarm
+    norm = mcolors.Normalize(vmin=-0.1, vmax=0.1, clip=False)
 
     # -------------------------------
     # Grade distribution
