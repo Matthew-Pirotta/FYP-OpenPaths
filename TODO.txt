@@ -19,3 +19,10 @@ URECA:
 - 17
 - 20?
 - Part3
+
+
+-----
+- String enum for key names
+- Visualation of malta network, how does it work if roads are directed?
+- remove tunnels
+- use indirected graph to calculate metrics

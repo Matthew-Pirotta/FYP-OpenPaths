@@ -31,7 +31,14 @@ A a grade of 2.5 is 1.43 degrees
 
 Parking data of where parking bays are is scarce in malta
 
----
+------
+Projection
+- Projection is required when needing distances in lengths of meters 
+- which is needed for area calculations
+- Gradients are correct. OSMnx projects internally before computing slopes, so your add_edge_grades results are already accurate in meters.
+- For visulations OSMnx automatically handles reprojection back to latitude/longitude when you export or plot on interactive maps.
+
+-------
 
 Resources
 

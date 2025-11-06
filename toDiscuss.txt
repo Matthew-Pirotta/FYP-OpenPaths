@@ -4,6 +4,8 @@ Lit review
 - take from suggested future work
 - need to end the lit review with a more detailed descprtion of what i plan to investigate, and how's its innovative
 - do i need a background section for NSGA-II?
+
+- paper went into a bunch of detail about reprojection, but like its just a hyperparameter?
 --------
 
 - Grade
@@ -13,3 +15,8 @@ Lit review
 - - Some high level data but nothing micro
 - - challenges with street names: "Triq Manwel Dimech" vs "Manwel Dimech Street". ALso made use of english street name tag but this isn't present for all streets. Attempted to make use of a fuzzy comparison but this lead to matches such as 'triq san pawl' vs 'triq san tumas' 
 - - 
+
+
+
+data
+- cost of building roads / special infrastructure

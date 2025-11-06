@@ -168,9 +168,10 @@ def bike_safety_classification(G_bike:MultiDiGraph):
         elif highway in {"trunk", "secondary","primary", "tertiary"}:
             classification = "dangerous"
 
-         #Not suitable for urban transport
+        #Country roads not suitable for urban transport
         elif highway == "track":
-            classification ="unsuitable"
+            #NOTE was "unsuitable" and has been changed to "moderate"
+            classification ="moderate"
         else:
             classification = "unclassified"
 
@@ -204,3 +205,16 @@ def summarise_road_type_stats(G:MultiDiGraph):
     print("cycleway type counts:")
     for cycleway_type, count in cycleway_counts.most_common():
         print(f"{cycleway_type}: {count}")
+
+def gen_safety_subgraph(G:MultiDiGraph, safety_classes:set) -> MultiDiGraph:
+    interested_edges = [
+        (u, v, k)
+        for u, v, k, d in G.edges(keys=True, data=True)
+        if d.get("safety") in safety_classes
+    ]
+
+    #NOTE typing error because they don’t know that you’re using a MultiDiGraph which requires a key
+    G_subgraph = G.edge_subgraph(interested_edges).copy()
+
+    return G_subgraph
+
