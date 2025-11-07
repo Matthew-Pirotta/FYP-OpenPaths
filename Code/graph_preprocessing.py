@@ -1,7 +1,11 @@
+from math import isnan
+from pickle import NONE
 from networkx import DiGraph, MultiDiGraph
 import osmnx as ox
 import networkx as nx
 import copy
+import numpy as np
+from constants import SafetyClass
 
 #TODO very safe?
 safety_to_risk_factor_map = {
@@ -139,9 +143,7 @@ def clean_graph(G:MultiDiGraph) -> MultiDiGraph:
     # ensures accurate 'length' in meters
     G = ox.project_graph(G)           
     G = ox.distance.add_edge_lengths(G)
-
     return G
-    
 
 #TODO
 def bike_safety_classification(G_bike:MultiDiGraph):
@@ -158,29 +160,29 @@ def bike_safety_classification(G_bike:MultiDiGraph):
 
         #Separated 
         if cycleway == 'track' or highway == "cycleway" or bicycle == "designated":
-            classification = "very_safe"
+            classification = SafetyClass.VERY_SAFE
         #Demarcated Shared
         elif cycleway in {"shared", "lane"}:
-            classification = "safe"
+            classification = SafetyClass.SAFE
 
         # MODERATE - Cyclist-friendly streets  
         elif highway in {"non_motorised", "residential"}:
-            classification = "moderate"
+            classification = SafetyClass.MODERATE
 
         # CAUTION - Mixed traffic but manageable
         elif highway == "service":
-            classification = "caution"
+            classification = SafetyClass.CAUTION
         
         # Dangerous - active traffic
         elif highway in {"trunk", "secondary","primary", "tertiary"}:
-            classification = "dangerous"
+            classification = SafetyClass.DANGEROUS
 
         #Country roads not suitable for urban transport
         elif highway == "track":
             #NOTE was "unsuitable" and has been changed to "moderate"
-            classification ="moderate"
+            classification = SafetyClass.MODERATE
         else:
-            classification = "unclassified"
+            classification = SafetyClass.UNCLASSIFIED
 
         data["safety"] = classification
         data["risk_factor"] = safety_to_risk_factor_map.get(data.get("safety",-1))
@@ -188,6 +190,52 @@ def bike_safety_classification(G_bike:MultiDiGraph):
         #print(f"highway: {highway},\t\t bicycle: {bicycle},\t\t cycleway: {cycleway}") 
 
 
+#region Grade
+def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGraph:
+    ox.settings.elevation_url_template = (
+    "https://api.opentopodata.org/v1/eudem25m?locations={locations}"
+    )
 
+    G = ox.add_node_elevations_google(G, batch_size=batch_size, pause=pause)
+    G = ox.elevation.add_edge_grades(G, add_absolute=True)
 
+    return G
 
+def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
+    """Nodes with missing elevation take the median of their neighbours. This is repeated multiple times in the case where elevationless nodes are completely surrounded with nodes that are also missing elevation data"""
+    for it in range(max_iter):
+        changed = 0
+        for node, data in G.nodes(data=True):
+            elev = data.get("elevation")
+            if np.isnan(elev):
+                print(elev,type(elev),",", f"is elev none {elev is None}", ",",f"is np.isnan(elev):{np.isnan(elev)}")
+                neigh_elevs = [
+                    G.nodes[n].get("elevation")
+                    for n in G.neighbors(node)
+                    if G.nodes[n].get("elevation") is not None #.get() returns None if node doesnt have elevation 
+                    and not np.isnan(G.nodes[n]["elevation"])
+                ]
+
+                """                
+                for n in G.neighbors(node):
+                n_elev = G.nodes[n].get("elevation")
+                print(n_elev,type(n_elev),",", f"is n_elev none {n_elev is None}", ",",f"is np.isnan(n_elev):{np.isnan(n_elev)}")"""
+
+                if neigh_elevs:
+                    data["elevation"] = np.median(neigh_elevs)
+                    changed += 1
+    
+        print(f"Iteration {it+1}: imputed {changed} nodes")
+        if changed == 0:
+            break
+
+    #Recalculate grades and clamp to reasonable values
+    G = ox.elevation.add_edge_grades(G, add_absolute=True)
+
+    for _,_, data in G.edges(data=True):
+        data["grade"] = float(np.clip(data["grade"], -0.2, 0.2))
+        data["grade_abs"] = float(min(data["grade_abs"], 0.2))
+
+    return G
+
+#endregion

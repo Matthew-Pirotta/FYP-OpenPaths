@@ -8,15 +8,17 @@ from matplotlib.ticker import PercentFormatter
 import numpy as np
 import osmnx as ox
 
+from constants import SafetyClass
+
 def plot_road_classification(G_bike:nx.MultiDiGraph):
     safety_to_color_map = {
-    "very_safe": "magenta",
-    "safe": "green",
-    "moderate": "yellow",
-    "caution": "orange",
-    "dangerous": "red",
-    "unsuitable": "brown",
-    "unclassified": "gray"
+    SafetyClass.VERY_SAFE: "magenta",
+    SafetyClass.SAFE: "green",
+    SafetyClass.MODERATE: "yellow",
+    SafetyClass.CAUTION: "orange",
+    SafetyClass.DANGEROUS: "red",
+    SafetyClass.UNSUITABLE: "brown",
+    SafetyClass.UNCLASSIFIED: "gray"
     }
 
     edge_colors = []

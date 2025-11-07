@@ -12,20 +12,23 @@ import graph_preprocessing
 class GraphManager:
     def __init__(self, location: str):
         self.location = location
+
         self.G_master = self.load_network()
+        self.G_master = graph_preprocessing.add_elevation_data(self.G_master)
+        self.G_master = graph_preprocessing.impute_missing_elevation(self.G_master)
         self.G_master = graph_preprocessing.clean_graph(self.G_master)
 
-
+    #region loading and creating Graphs
     def __create_master_graph(self, G_bike, G_drive) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
         #NOTE attributes from G_bike take precedent
         G_master = nx.compose(G_drive, G_bike)
 
-        # Step 1: tag drive edges
+        # tag drive edges
         for u, v, k, d in G_drive.edges(keys=True, data=True):
             G_master[u][v][k]["car_allowed"] = True
         
-        # Step 2: tag bike edges
+        # tag bike edges
         for u, v, k, d in G_bike.edges(keys=True, data=True):
             G_master[u][v][k]["bike_allowed"] = True
 
@@ -39,7 +42,7 @@ class GraphManager:
         G_master = self.__create_master_graph(G_bike, G_drive)
 
         return G_master
-
+    #endregion
 
     # region Subgraph generators
     def make_drive_subgraph(self):
@@ -58,10 +61,15 @@ class GraphManager:
         return self.G_master.edge_subgraph(edges).copy()    
     #endregion
 
-
+    def reallocate_edge(self, edge_id, new_safety="safe"):
+        """Simulate reallocating a road edge to bike use."""
+        u, v, k = edge_id
+        d = self.G_master[u][v][k]
+        d["car_allowed"] = False
+        d["bike_allowed"] = True
+        d["safety"] = new_safety
     
     def summarise_road_type_stats(self, G:MultiDiGraph):
-        print("hi")
         highway_counts = Counter()
         bikeway_counts = Counter()
         cycleway_counts = Counter()

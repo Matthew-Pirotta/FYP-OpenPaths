@@ -26,3 +26,4 @@ URECA:
 - Visualation of malta network, how does it work if roads are directed?
 - remove tunnels
 - use indirected graph to calculate metrics
+- SAFE CLASS ISNT EVEN USED ONCE?????

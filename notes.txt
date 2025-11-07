@@ -37,6 +37,11 @@ Projection
 - which is needed for area calculations
 - Gradients are correct. OSMnx projects internally before computing slopes, so your add_edge_grades results are already accurate in meters.
 - For visulations OSMnx automatically handles reprojection back to latitude/longitude when you export or plot on interactive maps.
+-------
+OSMNX
+MultiDiGraphs are nonplanar directed graphs with possible self-loops and parallel edges. Thus, a one-way street will be represented with a single directed edge from node u to node v, but a bidirectional street will be represented with two reciprocal directed edges (with identical geometries): one from node u to node v and another from v to u, to represent both possible directions of flow.
+
+Also if there are multiple lanes in same direction there will be a lanes attribute.
 
 -------
 
