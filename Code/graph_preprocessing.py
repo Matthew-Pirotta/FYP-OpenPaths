@@ -1,7 +1,7 @@
-from networkx import MultiDiGraph
+from networkx import DiGraph, MultiDiGraph
 import osmnx as ox
-from collections import Counter
-
+import networkx as nx
+import copy
 
 #TODO very safe?
 safety_to_risk_factor_map = {
@@ -37,7 +37,7 @@ def merge_semantically_equivalent_road_tags(G:MultiDiGraph):
     }
 
     cycle_equivalence = {
-        "shared_lane"
+        "shared_lane" #TODO????
     }
     
     for _,_, data in G.edges(data=True):
@@ -130,10 +130,17 @@ def collapse_road_tag_lists(G):
         data["cycleway"] = cycleway
 
 
-def clean_graph(G:MultiDiGraph):
-    """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one"""
+def clean_graph(G:MultiDiGraph) -> MultiDiGraph:
+    """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
     merge_semantically_equivalent_road_tags(G)
     collapse_road_tag_lists(G)
+    bike_safety_classification(G)
+
+    # ensures accurate 'length' in meters
+    G = ox.project_graph(G)           
+    G = ox.distance.add_edge_lengths(G)
+
+    return G
     
 
 #TODO
@@ -181,40 +188,6 @@ def bike_safety_classification(G_bike:MultiDiGraph):
         #print(f"highway: {highway},\t\t bicycle: {bicycle},\t\t cycleway: {cycleway}") 
 
 
-def summarise_road_type_stats(G:MultiDiGraph):
-    highway_counts = Counter()
-    bikeway_counts = Counter()
-    cycleway_counts = Counter()
 
-    for u, v, data in G.edges(data=True):
-        highway_counts[data.get("highway")] += 1
-        bikeway_counts[data.get("bicycle")] += 1
-        cycleway_counts[data.get("cycleway")] += 1
-    
-    
-    print("Highway type counts:")
-    for highway_type, count in highway_counts.most_common():
-        print(f"{highway_type}: {count}")
 
-    print("-------")
-    print("bikeway classification type counts:")
-    for bikeway_type, count in bikeway_counts.most_common():
-        print(f"{bikeway_type}: {count}")
-
-    print("------")
-    print("cycleway type counts:")
-    for cycleway_type, count in cycleway_counts.most_common():
-        print(f"{cycleway_type}: {count}")
-
-def gen_safety_subgraph(G:MultiDiGraph, safety_classes:set) -> MultiDiGraph:
-    interested_edges = [
-        (u, v, k)
-        for u, v, k, d in G.edges(keys=True, data=True)
-        if d.get("safety") in safety_classes
-    ]
-
-    #NOTE typing error because they don’t know that you’re using a MultiDiGraph which requires a key
-    G_subgraph = G.edge_subgraph(interested_edges).copy()
-
-    return G_subgraph
 
