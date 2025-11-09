@@ -17,6 +17,7 @@ class GraphManager:
         self.G_master = graph_preprocessing.add_elevation_data(self.G_master)
         self.G_master = graph_preprocessing.impute_missing_elevation(self.G_master)
         self.G_master = graph_preprocessing.clean_graph(self.G_master)
+        self.G_master = graph_preprocessing.simplify_multidigraph_in_place(self.G_master)
 
     #region loading and creating Graphs
     def __create_master_graph(self, G_bike, G_drive) -> MultiDiGraph:
@@ -37,7 +38,11 @@ class GraphManager:
     def load_network(self) -> MultiDiGraph:
         print(f"Loading OSM networks for {self.location}...")
         G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
+        nx.set_edge_attributes(G_bike,True,"bike_allowed")
+        #TODO further processing and setting of false
+
         G_drive = ox.graph_from_place(self.location, network_type="drive", simplify=True, retain_all=True)
+        nx.set_edge_attributes(G_drive,True,"car_allowed")
 
         G_master = self.__create_master_graph(G_bike, G_drive)
 
@@ -79,7 +84,6 @@ class GraphManager:
             bikeway_counts[data.get("bicycle")] += 1
             cycleway_counts[data.get("cycleway")] += 1
         
-        
         print("Highway type counts:")
         for highway_type, count in highway_counts.most_common():
             print(f"{highway_type}: {count}")
@@ -94,3 +98,4 @@ class GraphManager:
         for cycleway_type, count in cycleway_counts.most_common():
             print(f"{cycleway_type}: {count}")
 
+    

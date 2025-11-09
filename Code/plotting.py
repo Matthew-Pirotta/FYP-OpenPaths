@@ -10,7 +10,7 @@ import osmnx as ox
 
 from constants import SafetyClass
 
-def plot_road_classification(G_bike:nx.MultiDiGraph):
+def plot_road_classification(G_bike):
     safety_to_color_map = {
     SafetyClass.VERY_SAFE: "magenta",
     SafetyClass.SAFE: "green",
@@ -22,7 +22,7 @@ def plot_road_classification(G_bike:nx.MultiDiGraph):
     }
 
     edge_colors = []
-    for _, _, _, data in G_bike.edges(keys=True, data=True):
+    for _, _, data in G_bike.edges(data=True):
         color = safety_to_color_map.get(data.get("safety"), "gray")
         edge_colors.append(color)
 

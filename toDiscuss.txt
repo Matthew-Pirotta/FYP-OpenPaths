@@ -20,3 +20,8 @@ Lit review
 
 data
 - cost of building roads / special infrastructure
+
+
+
+----
+graph representation

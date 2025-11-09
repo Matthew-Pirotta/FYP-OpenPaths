@@ -65,7 +65,7 @@ def select_primary_label(highway_list:list[str]|str, priority_order:list) -> str
     if not isinstance(highway_list, list):
         return highway_list
     
-    print(highway_list)
+    #print(highway_list)
     # Find highest priority highway type
     best_highway = highway_list[0]  # fallback
     best_priority = -1
@@ -81,7 +81,6 @@ def select_primary_label(highway_list:list[str]|str, priority_order:list) -> str
             continue
     
     return best_highway
-
 
 def collapse_road_tag_lists(G):
     highway_priority = [          
@@ -134,6 +133,15 @@ def collapse_road_tag_lists(G):
         data["cycleway"] = cycleway
 
 
+def set_edge_attributes(G):
+    for _, _, _, d in G.edges(keys=True, data=True):
+
+        #Renames 'lanes' to 'lanes_car, and set to 1 as default
+        d["car_lanes"] = (d.get("lanes",1))
+        del d["lanes"]
+
+        d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
+
 def clean_graph(G:MultiDiGraph) -> MultiDiGraph:
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
     merge_semantically_equivalent_road_tags(G)
@@ -162,7 +170,8 @@ def bike_safety_classification(G_bike:MultiDiGraph):
         if cycleway == 'track' or highway == "cycleway" or bicycle == "designated":
             classification = SafetyClass.VERY_SAFE
         #Demarcated Shared
-        elif cycleway in {"shared", "lane"}:
+        #NOTE shared_lane is not considered safe as the cyclist is travelling on the same road with no markings
+        elif cycleway in {"shared", "lane",}:
             classification = SafetyClass.SAFE
 
         # MODERATE - Cyclist-friendly streets  
@@ -208,18 +217,12 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         for node, data in G.nodes(data=True):
             elev = data.get("elevation")
             if np.isnan(elev):
-                print(elev,type(elev),",", f"is elev none {elev is None}", ",",f"is np.isnan(elev):{np.isnan(elev)}")
                 neigh_elevs = [
                     G.nodes[n].get("elevation")
                     for n in G.neighbors(node)
                     if G.nodes[n].get("elevation") is not None #.get() returns None if node doesnt have elevation 
                     and not np.isnan(G.nodes[n]["elevation"])
                 ]
-
-                """                
-                for n in G.neighbors(node):
-                n_elev = G.nodes[n].get("elevation")
-                print(n_elev,type(n_elev),",", f"is n_elev none {n_elev is None}", ",",f"is np.isnan(n_elev):{np.isnan(n_elev)}")"""
 
                 if neigh_elevs:
                     data["elevation"] = np.median(neigh_elevs)
@@ -239,3 +242,67 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
     return G
 
 #endregion
+def simplify_multidigraph_in_place(G):
+    """Merge same-direction parallel edges in a MultiDiGraph while keeping it a MultiDiGraph."""
+    merged_edges = []
+
+    # Iterate over each directed node pair that has multiple edges
+    edges_to_process = list(G.edges())
+    for u, v in edges_to_process:
+        if not G.has_edge(u, v):
+            continue  # it may have been removed already
+
+        data_dict = G[u][v]
+        if len(data_dict) <= 1:
+            continue  # only one edge → nothing to merge
+
+        # gather all edge data
+        edges = list(data_dict.values())
+
+        agg = {}
+
+        # attributes to aggregate
+        numeric_attrs = ["length", "grade"]
+        summed_attrs  = ["lanes_car", "lanes_bike"]
+        bool_attrs    = ["car_allowed", "bike_allowed"]
+        categorical_attrs = ["highway", "safety", "cycleway"]
+
+        # average numeric values
+        for attr in numeric_attrs:
+            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
+            if vals:
+                agg[attr] = float(np.mean(vals))
+
+        # sum lane counts
+        for attr in summed_attrs:
+            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
+            if vals:
+                agg[attr] = int(np.sum(vals))
+
+        # boolean OR
+        for attr in bool_attrs:
+            agg[attr] = any(d.get(attr, False) for d in edges)
+
+        # pick most bike-friendly safety class if available
+        #TODO Nuh
+        for attr in categorical_attrs:
+            vals = [d.get(attr) for d in edges if d.get(attr) not in (None, "", np.nan)]
+            if vals:
+                if attr == "safety" and "safety_to_risk_factor_map" in globals():
+                    agg[attr] = min(vals, key=lambda x: safety_to_risk_factor_map.get(x, 99))
+                else:
+                    agg[attr] = vals[0]
+            else:
+                agg[attr] = None
+
+        merged_edges.append((u, v, agg))
+
+        # remove the old parallel edges
+        for key in list(data_dict.keys()):
+            G.remove_edge(u, v, key)
+
+    # add back one merged edge per direction
+    for u, v, attrs in merged_edges:
+        G.add_edge(u, v, **attrs)
+
+    return G

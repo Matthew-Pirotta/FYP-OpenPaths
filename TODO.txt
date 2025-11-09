@@ -27,3 +27,4 @@ URECA:
 - remove tunnels
 - use indirected graph to calculate metrics
 - SAFE CLASS ISNT EVEN USED ONCE?????
+- if bi directional cycle lane takes 1 car lane, how much for protected lined with trees?
