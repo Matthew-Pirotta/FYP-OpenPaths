@@ -1,0 +1,15 @@
+*Topography Data source*
+
+OpenTop
+eudem25m 	25 m 	Europe. 	EEA
+
+Google maps
+resolution: 610.8129272460938
+
+# Topological Metrics
+Centrality and Directness are calculated within the LCC; Szell et al. (2021) – Growing Urban Bicycle Networks “Metrics like global efficiency and directness become unstable when computed across disconnected networks. Hence, we restrict calculations to the Largest Connected Component (LCC) to maintain interpretability.”
+
+# Graph Representation
+- for the master graph we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
+
+- Osmnx by default represents the network as a MultiDigraph, where roads in the same direction but where separated where represented as two different edges. However I opted to convert the network to Digraph to only have 1 edge per direction, while still allowing for an edge in the other i.e 1 u->v and 1 v->u. This choice was made to simplify the optimisation problem. Also only a few roads were actually affected by this change.   

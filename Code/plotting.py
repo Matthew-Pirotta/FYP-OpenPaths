@@ -62,10 +62,13 @@ def plot_elevation(G):
     # -------------------------------
     # Elevation distribution
     # -------------------------------
-    elevations = [
-        d["elevation"] for _, d in G.nodes(data=True)
-        if d.get("elevation") is not None
-    ]
+    elevations = [d.get("elevation") for _, d in G.nodes(data=True) if d.get("elevation") is not None]
+
+    for node, d in G.nodes(data=True):
+        elevation = d.get("elevation") 
+        if elevation is None:
+            print(f"node {node} has elevation:{elevation} of type:{type(elevation)}")
+
     print(f"Fetched elevations for {len(elevations)} / {G.number_of_nodes()} nodes")
 
     plt.hist(elevations, bins=40, color='purple', edgecolor='black', alpha=0.8)

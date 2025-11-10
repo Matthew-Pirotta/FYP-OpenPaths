@@ -22,29 +22,35 @@ class GraphManager:
     #region loading and creating Graphs
     def __create_master_graph(self, G_bike, G_drive) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
+        print("creating master graph network...")
         #NOTE attributes from G_bike take precedent
         G_master = nx.compose(G_drive, G_bike)
+        G_master = ox.truncate.largest_component(G_master, strongly=False) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
 
         # tag drive edges
         for u, v, k, d in G_drive.edges(keys=True, data=True):
+            if not G_master.has_edge(u,v):
+                continue
             G_master[u][v][k]["car_allowed"] = True
         
         # tag bike edges
         for u, v, k, d in G_bike.edges(keys=True, data=True):
+            if not G_master.has_edge(u,v):
+                continue
             G_master[u][v][k]["bike_allowed"] = True
 
         return G_master
     
     def load_network(self) -> MultiDiGraph:
         print(f"Loading OSM networks for {self.location}...")
-        G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
-        nx.set_edge_attributes(G_bike,True,"bike_allowed")
+        self.G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
+        nx.set_edge_attributes(self.G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
         G_drive = ox.graph_from_place(self.location, network_type="drive", simplify=True, retain_all=True)
         nx.set_edge_attributes(G_drive,True,"car_allowed")
 
-        G_master = self.__create_master_graph(G_bike, G_drive)
+        G_master = self.__create_master_graph(self.G_bike, G_drive)
 
         return G_master
     #endregion

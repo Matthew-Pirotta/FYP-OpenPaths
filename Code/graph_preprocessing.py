@@ -201,6 +201,7 @@ def bike_safety_classification(G_bike:MultiDiGraph):
 
 #region Grade
 def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGraph:
+    print("Adding elevation data.....")
     ox.settings.elevation_url_template = (
     "https://api.opentopodata.org/v1/eudem25m?locations={locations}"
     )
@@ -212,11 +213,12 @@ def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGr
 
 def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
     """Nodes with missing elevation take the median of their neighbours. This is repeated multiple times in the case where elevationless nodes are completely surrounded with nodes that are also missing elevation data"""
+    print("Imputing missing elevation values")
     for it in range(max_iter):
         changed = 0
         for node, data in G.nodes(data=True):
             elev = data.get("elevation")
-            if np.isnan(elev):
+            if np.isnan(elev) or elev is None:
                 neigh_elevs = [
                     G.nodes[n].get("elevation")
                     for n in G.neighbors(node)
@@ -231,6 +233,19 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         print(f"Iteration {it+1}: imputed {changed} nodes")
         if changed == 0:
             break
+
+    #TODO idk why man :Sob:
+    print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
+    full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
+                      if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]
+    median_elevation = np.median(full_elevation)
+    for node, data in G.nodes(data=True):
+            elev = data.get("elevation")
+            if np.isnan(elev) or elev is None:
+                print(f"NOde{node} elevation is problematic :/")
+                data["elevation"] = float(median_elevation)
+
+    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
 
     #Recalculate grades and clamp to reasonable values
     G = ox.elevation.add_edge_grades(G, add_absolute=True)

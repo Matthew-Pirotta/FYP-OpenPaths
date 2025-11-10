@@ -90,3 +90,20 @@ def plot_parallel_edges(G):
     cbar.set_label("Parallel edges per directed pair", rotation=270, labelpad=20)
     plt.title("Parallel Edges (Same Direction)")
     plt.show()
+
+
+def print_osmid():
+    networkname = ["bike", "drive", "master"]
+        networks = [self.G_bike,G_drive, G_master]
+
+        for network, networkname in zip(networks, networkname):
+            i = 0
+            print(f"In network {networkname}")
+            for _,_,data in network.edges(data=True):
+                osmid = data.get("osmid", -1)
+                
+                if osmid == -1:
+                    i += 1
+                    #print(f"Node {node} does not have an osmid")
+            print(i)
+        
