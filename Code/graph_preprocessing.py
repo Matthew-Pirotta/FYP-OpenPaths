@@ -138,7 +138,8 @@ def set_edge_attributes(G):
 
         #Renames 'lanes' to 'lanes_car, and set to 1 as default
         d["car_lanes"] = (d.get("lanes",1))
-        del d["lanes"]
+        if d.get("lanes"):
+         del d["lanes"]
 
         d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
 
@@ -147,6 +148,7 @@ def clean_graph(G:MultiDiGraph) -> MultiDiGraph:
     merge_semantically_equivalent_road_tags(G)
     collapse_road_tag_lists(G)
     bike_safety_classification(G)
+    set_edge_attributes(G)
 
     # ensures accurate 'length' in meters
     G = ox.project_graph(G)           
@@ -196,6 +198,8 @@ def bike_safety_classification(G_bike:MultiDiGraph):
         data["safety"] = classification
         data["risk_factor"] = safety_to_risk_factor_map.get(data.get("safety",-1))
 
+        if classification == SafetyClass.DANGEROUS:
+            data["bike_allowed"] = False
         #print(f"highway: {highway},\t\t bicycle: {bicycle},\t\t cycleway: {cycleway}") 
 
 

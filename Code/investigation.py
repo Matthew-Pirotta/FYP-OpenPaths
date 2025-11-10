@@ -94,16 +94,25 @@ def plot_parallel_edges(G):
 
 def print_osmid():
     networkname = ["bike", "drive", "master"]
-        networks = [self.G_bike,G_drive, G_master]
+    networks = [self.G_bike,G_drive, G_master]
 
-        for network, networkname in zip(networks, networkname):
-            i = 0
-            print(f"In network {networkname}")
-            for _,_,data in network.edges(data=True):
-                osmid = data.get("osmid", -1)
-                
-                if osmid == -1:
-                    i += 1
-                    #print(f"Node {node} does not have an osmid")
-            print(i)
-        
+    for network, networkname in zip(networks, networkname):
+        i = 0
+        print(f"In network {networkname}")
+        for _,_,data in network.edges(data=True):
+            osmid = data.get("osmid", -1)
+            
+            if osmid == -1:
+                i += 1
+                #print(f"Node {node} does not have an osmid")
+        print(i)
+
+def print_node_data():
+    node = 9068823240
+    print(my_graph.G_master.nodes[node])
+    print(my_graph.G_master.nodes[node].get("elevation"))
+    neighs = my_graph.G_master.neighbors(node)
+
+    print("\nneighbours")
+    for neigh in neighs:
+        print(neigh, my_graph.G_master.nodes[neigh])

@@ -7,6 +7,7 @@ import numpy as np
 from collections import Counter
 
 
+from constants import SafetyClass
 import graph_preprocessing
 
 class GraphManager:
@@ -59,6 +60,7 @@ class GraphManager:
     def make_drive_subgraph(self):
         return self._filter_edges(lambda d: d.get("car_allowed", False))
 
+    #TODO need to set dangerous roads and bridges as not bikeable
     def make_bikeable_subgraph(self):
         return self._filter_edges(lambda d: d.get("bike_allowed", False))
 
@@ -72,13 +74,35 @@ class GraphManager:
         return self.G_master.edge_subgraph(edges).copy()    
     #endregion
 
-    def reallocate_edge(self, edge_id, new_safety="safe"):
+    def reallocate_edge(self, edge_id, new_safety=SafetyClass.SAFE):
         """Simulate reallocating a road edge to bike use."""
-        u, v, k = edge_id
-        d = self.G_master[u][v][k]
-        d["car_allowed"] = False
+        u,v,k = edge_id
+        #NOTE Since the 'MultiGraph' has only one edge per direction, k will always be 0
+        d = self.G_master[u][v][k] 
+        d["car_lanes"] -= min(d["car_lanes"]-1,0)
+        if d["car_lanes"] == 0:
+            d["car_allowed"] = False
+
+        #removing one car lane adds 1 bike lane in each direction
         d["bike_allowed"] = True
+        d["bike_lanes"] += 1
         d["safety"] = new_safety
+
+        # --- Reverse direction ---
+        if self.G_master.has_edge(v, u):
+            rev = self.G_master[v][u][0]
+            rev["bike_allowed"] = True
+            rev["bike_lanes"] = rev.get("bike_lanes") + 1
+            rev["safety"] = new_safety
+        else: #create edge if it doesn't exist
+            attrs = d.copy()
+            attrs["bike_allowed"] = True
+            attrs["bike_lanes"] = 1
+            attrs["car_allowed"] = False  # no car traffic on this synthetic link
+            attrs["car_lanes"] = 0
+            attrs["geometry"] = d["geometry"].reverse() #road shape
+            attrs["grade"] = -d["grade"]
+            self.G_master.add_edge(v, u, **attrs)
     
     def summarise_road_type_stats(self, G:MultiDiGraph):
         highway_counts = Counter()
