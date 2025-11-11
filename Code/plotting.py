@@ -144,33 +144,38 @@ def plot_grades(G):
     plt.show()
 
 def plot_evaluation(df):
-    # --- Plot connectedness ---
-    plt.figure(figsize=(8,5))
-    plt.plot(df.index, df["num_components"], label="Number of Components", color="red")
-    plt.xlabel("Iteration")
-    plt.ylabel("Components")
-    plt.title("Network Fragmentation Over Time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.show()
+    fig, axs = plt.subplots(2,2, figsize=(12, 8))
 
-    # --- Plot LCC growth ---
-    plt.figure(figsize=(8,5))
-    plt.plot(df.index, df["lcc_length"]/1000, label="LCC length (km)", color="green")
-    plt.xlabel("Iteration")
-    plt.ylabel("Length (km)")
-    plt.title("Largest Connected Component Length Over Time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.show()
+    # --- Plot connectedness ---
+    axs[0,0].plot(df.index, df["num_components"], label="Number of Components", color="red")
+    axs[0,0].set_xlabel("Iteration")
+    axs[0,0].set_ylabel("Components")
+    axs[0,0].set_title("Network Fragmentation Over Time")
+    axs[0,0].legend()
+    axs[0,0].grid(True, alpha=0.3)
+
+
+    #-- Plot LCC growth ---
+    axs[0,1].plot(df.index, df["lcc_length"]/1000, label="LCC length (km)", color="green")
+    axs[0,1].set_xlabel("Iteration")
+    axs[0,1].set_ylabel("Length (km)")
+    axs[0,1].set_title("Largest Connected Component Length Over Time")
+    axs[0,1].legend()
+    axs[0,1].grid(True, alpha=0.3)
+
 
     # --- Plot centrality metrics ---
     df[["mean_edge_betweenness", "mean_node_betweenness", "mean_node_closeness"]].plot(
-        figsize=(10,6)
+        ax=axs[1,0],
+        linewidth=2
     )
-    plt.title("Network Centrality Metrics During Simulation")
-    plt.xlabel("Iteration")
-    plt.ylabel("Average Centrality Value")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
+    axs[1,0].set_xlabel("Iteration")
+    axs[1,0].set_ylabel("Average Centrality Value")
+    axs[1,0].set_title("Network Centrality Metrics During Simulation")
+    axs[1,0].grid(True, alpha=0.3)
+
+    # hide unused bottom-right subplot
+    axs[1,1].axis("off")
+
+    fig.tight_layout()
     plt.show()
