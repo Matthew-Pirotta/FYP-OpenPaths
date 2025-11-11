@@ -78,9 +78,17 @@ def plot_elevation(G):
     plt.grid(True, alpha=0.3)
     plt.show()
 
-    #Elevation Map    
+    #Elevation Map 
+    cmap = plt.cm.plasma
+    norm = mcolors.Normalize(vmin=min(elevations), vmax=max(elevations))
+
     nc = ox.plot.get_node_colors_by_attr(G, "elevation", cmap="plasma")
-    fig, ax = ox.plot.plot_graph(G, node_color=nc, node_size=5, edge_color="#333333", bgcolor="k")
+    fig, ax = ox.plot.plot_graph(G, node_color=nc, node_size=5, edge_color="#333333", bgcolor="k", show=False,close=False)
+    
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.01)
+    cbar.set_label("Elevation (m)")
+    plt.show()
 
 
 
@@ -133,4 +141,36 @@ def plot_grades(G):
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.01,
                         extend='both', format=PercentFormatter(xmax=1.0, decimals=0))
     cbar.set_label("Edge Grade (%)")
+    plt.show()
+
+def plot_evaluation(df):
+    # --- Plot connectedness ---
+    plt.figure(figsize=(8,5))
+    plt.plot(df.index, df["num_components"], label="Number of Components", color="red")
+    plt.xlabel("Iteration")
+    plt.ylabel("Components")
+    plt.title("Network Fragmentation Over Time")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+    # --- Plot LCC growth ---
+    plt.figure(figsize=(8,5))
+    plt.plot(df.index, df["lcc_length"]/1000, label="LCC length (km)", color="green")
+    plt.xlabel("Iteration")
+    plt.ylabel("Length (km)")
+    plt.title("Largest Connected Component Length Over Time")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+    # --- Plot centrality metrics ---
+    df[["mean_edge_betweenness", "mean_node_betweenness", "mean_node_closeness"]].plot(
+        figsize=(10,6)
+    )
+    plt.title("Network Centrality Metrics During Simulation")
+    plt.xlabel("Iteration")
+    plt.ylabel("Average Centrality Value")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
     plt.show()

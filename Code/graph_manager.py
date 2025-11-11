@@ -44,42 +44,43 @@ class GraphManager:
     
     def load_network(self) -> MultiDiGraph:
         print(f"Loading OSM networks for {self.location}...")
-        self.G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
-        nx.set_edge_attributes(self.G_bike,True,"bike_allowed")
+        G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
+        nx.set_edge_attributes(G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
         G_drive = ox.graph_from_place(self.location, network_type="drive", simplify=True, retain_all=True)
         nx.set_edge_attributes(G_drive,True,"car_allowed")
 
-        G_master = self.__create_master_graph(self.G_bike, G_drive)
+        G_master = self.__create_master_graph(G_bike, G_drive)
 
         return G_master
     #endregion
 
     # region Subgraph generators
-    def make_drive_subgraph(self):
-        return self._filter_edges(lambda d: d.get("car_allowed", False))
+    def make_drive_subgraph(self, G:MultiDiGraph):
+        return self._filter_edges(G, lambda d: d.get("car_allowed", False))
 
     #TODO need to set dangerous roads and bridges as not bikeable
-    def make_bikeable_subgraph(self):
-        return self._filter_edges(lambda d: d.get("bike_allowed", False))
+    def make_bikeable_subgraph(self, G:MultiDiGraph):
+        return self._filter_edges(G, lambda d: d.get("bike_allowed", False))
 
-    def make_protected_subgraph(self):
-        return self._filter_edges(lambda d: d.get("safety") in ["safe", "very_safe"])
+    def make_protected_subgraph(self, G:MultiDiGraph):
+        return self._filter_edges(G, lambda d: d.get("safety") in ["safe", "very_safe"])
     
-    def _filter_edges(self, condition):
+    def _filter_edges(self, G:MultiDiGraph, condition):
+        #NOTE subgraph is view and read-only
         edges = [(u, v, k) 
-                 for u, v, k, d in self.G_master.edges(keys=True, data=True) 
+                 for u, v, k, d in G.edges(keys=True, data=True) 
                  if condition(d)]
-        return self.G_master.edge_subgraph(edges).copy()    
+        return G.edge_subgraph(edges)
     #endregion
 
-    def reallocate_edge(self, edge_id, new_safety=SafetyClass.SAFE):
+    def reallocate_edge(self, G:MultiDiGraph, edge_id, new_safety=SafetyClass.SAFE):
         """Simulate reallocating a road edge to bike use."""
         u,v,k = edge_id
         #NOTE Since the 'MultiGraph' has only one edge per direction, k will always be 0
-        d = self.G_master[u][v][k] 
-        d["car_lanes"] -= min(d["car_lanes"]-1,0)
+        d = G[u][v][k] 
+        d["car_lanes"] = max(d["car_lanes"]-1,0)
         if d["car_lanes"] == 0:
             d["car_allowed"] = False
 
@@ -89,8 +90,8 @@ class GraphManager:
         d["safety"] = new_safety
 
         # --- Reverse direction ---
-        if self.G_master.has_edge(v, u):
-            rev = self.G_master[v][u][0]
+        if G.has_edge(v, u):
+            rev = G[v][u][0]
             rev["bike_allowed"] = True
             rev["bike_lanes"] = rev.get("bike_lanes") + 1
             rev["safety"] = new_safety
@@ -102,7 +103,7 @@ class GraphManager:
             attrs["car_lanes"] = 0
             attrs["geometry"] = d["geometry"].reverse() #road shape
             attrs["grade"] = -d["grade"]
-            self.G_master.add_edge(v, u, **attrs)
+            G.add_edge(v, u, **attrs)
     
     def summarise_road_type_stats(self, G:MultiDiGraph):
         highway_counts = Counter()

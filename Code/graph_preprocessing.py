@@ -132,14 +132,31 @@ def collapse_road_tag_lists(G):
         cycleway = select_primary_label(cycleway, cycleway_priority)
         data["cycleway"] = cycleway
 
+def collapse_lanes_list(G):
+    pass
+
 
 def set_edge_attributes(G):
-    for _, _, _, d in G.edges(keys=True, data=True):
+    for u, v, _, d in G.edges(keys=True, data=True):
 
         #Renames 'lanes' to 'lanes_car, and set to 1 as default
-        d["car_lanes"] = (d.get("lanes",1))
-        if d.get("lanes"):
-         del d["lanes"]
+        lanes_val = d.get("lanes", 1)
+        # Normalize to a single numeric value
+        if isinstance(lanes_val, list):
+            # sometimes it's ['2', '3']; assume these are all separate lanes
+            #print(f"edge {u}->{v} has lanes as a list")
+            #print(f"{d}")
+            lanes_val = sum(int(x) for x in lanes_val if str(x).isdigit())
+        elif isinstance(lanes_val, str):
+            # simple case: "2"
+            lanes_val = int(lanes_val) if lanes_val.isdigit() else 1
+
+        d["car_lanes"] = int(lanes_val)
+
+        # remove old 'lanes' tag
+        if "lanes" in d:
+            del d["lanes"]
+
 
         d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
 

@@ -1,18 +1,6 @@
 - Get some consensus of how much ppl prefer detour for safety over risky direct.
-- is it worth expanding the current maltese bike network if its inefficient?
-
-- normalise road length so that it dominates less?
-- can cycle on undeveloped roads?
-- how to handle 'unsuitable' roads
-- how to handle 'shared_lane', should it be discarded or combined with 'lane'?
 - cant cycle in tunnels, or highways (maybe)
-- when collapsing the lane list, should it be safest, unsafest?
-
--------
-
-- road selection not/priority
-- heurisitc road suggestion
-- grade display?
+- halting condition for heurisitc approach?
 
 ----------
 URECA:
@@ -22,9 +10,15 @@ URECA:
 - Part3
 
 -----
+MISC:
 - String enum for key names
 - Visualation of malta network, how does it work if roads are directed?
 - remove tunnels
-- use indirected graph to calculate metrics
-- SAFE CLASS ISNT EVEN USED ONCE?????
+- use undirected graph to calculate metrics
+- GraphManager isnt very clean data flow when doing evaluation
+
+-----
+OLD questions:
 - if bi directional cycle lane takes 1 car lane, how much for protected lined with trees?
+- normalise road length so that it dominates less?
+- is it worth expanding the current maltese bike network if its inefficient?
