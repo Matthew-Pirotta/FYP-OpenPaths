@@ -1,5 +1,4 @@
 from networkx import MultiDiGraph
-
 import networkx as nx
 import osmnx as ox
 import copy
@@ -8,53 +7,14 @@ from collections import Counter
 
 
 from constants import SafetyClass
-import graph_preprocessing
+from PreProcessing import graph_preprocessing
 
 class GraphManager:
     def __init__(self, location: str):
         self.location = location
 
-        self.G_master = self.load_network()
-        self.G_master = graph_preprocessing.add_elevation_data(self.G_master)
-        self.G_master = graph_preprocessing.impute_missing_elevation(self.G_master)
-        self.G_master = graph_preprocessing.clean_graph(self.G_master)
-        self.G_master = graph_preprocessing.simplify_multidigraph_in_place(self.G_master)
-
-    #region loading and creating Graphs
-    def __create_master_graph(self, G_bike, G_drive) -> MultiDiGraph:
-        """Combine bike and drive networks into one multimodal master graph."""
-        print("creating master graph network...")
-        #NOTE attributes from G_bike take precedent
-        G_master = nx.compose(G_drive, G_bike)
-        G_master = ox.truncate.largest_component(G_master, strongly=False) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
-
-        # tag drive edges
-        for u, v, k, d in G_drive.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v):
-                continue
-            G_master[u][v][k]["car_allowed"] = True
-        
-        # tag bike edges
-        for u, v, k, d in G_bike.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v):
-                continue
-            G_master[u][v][k]["bike_allowed"] = True
-
-        return G_master
-    
-    def load_network(self) -> MultiDiGraph:
-        print(f"Loading OSM networks for {self.location}...")
-        G_bike = ox.graph_from_place(self.location, network_type="bike", simplify=True, retain_all=True)
-        nx.set_edge_attributes(G_bike,True,"bike_allowed")
-        #TODO further processing and setting of false
-
-        G_drive = ox.graph_from_place(self.location, network_type="drive", simplify=True, retain_all=True)
-        nx.set_edge_attributes(G_drive,True,"car_allowed")
-
-        G_master = self.__create_master_graph(G_bike, G_drive)
-
-        return G_master
-    #endregion
+        self.G_master = graph_preprocessing.load_network(self.location)
+        self.G_master, self.gdf_localities = graph_preprocessing.clean_graph(self.G_master)
 
     # region Subgraph generators
     def make_drive_subgraph(self, G:MultiDiGraph):
@@ -66,6 +26,9 @@ class GraphManager:
 
     def make_protected_subgraph(self, G:MultiDiGraph):
         return self._filter_edges(G, lambda d: d.get("safety") in ["safe", "very_safe"])
+    
+    def make_region_subgraph(self, G:MultiDiGraph, region):
+        return self._filter_edges(G, lambda d: d.get("region") == region)
     
     def _filter_edges(self, G:MultiDiGraph, condition):
         #NOTE subgraph is view and read-only

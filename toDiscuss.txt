@@ -3,6 +3,8 @@ Lit review
 - do i have to compare the paper results in more detail? do i have to compare percentage improvements?
 - take from suggested future work
 - need to end the lit review with a more detailed descprtion of what i plan to investigate, and how's its innovative
+- discuss how its NP hard in greater detail
+- also discuss how centraility it O(V*E) or something like that
 
 data
 - cost of building roads / special infrastructure

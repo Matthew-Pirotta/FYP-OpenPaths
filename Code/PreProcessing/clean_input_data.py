@@ -1,22 +1,10 @@
-from math import isnan
-from pickle import NONE
-from networkx import DiGraph, MultiDiGraph
+from networkx import MultiDiGraph
 import osmnx as ox
 import networkx as nx
-import copy
 import numpy as np
 from constants import SafetyClass
 
-#TODO very safe?
-safety_to_risk_factor_map = {
-    "safe": 1,
-    "moderate": 1.5,
-    "caution": 2 ,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
-    "dangerous": 4, #TODO highway twice as costly ig?
-    "unsuitable": 2,
-    "unclassified": 2,
-}
-
+#region road tags
 def merge_semantically_equivalent_road_tags(G:MultiDiGraph):
     highway_equivalence = {
     # Merging link types
@@ -134,9 +122,9 @@ def collapse_road_tag_lists(G):
 
 def collapse_lanes_list(G):
     pass
+#endregion
 
-
-def set_edge_attributes(G):
+def standardise_edge_atr(G):
     for u, v, _, d in G.edges(keys=True, data=True):
 
         #Renames 'lanes' to 'lanes_car, and set to 1 as default
@@ -157,67 +145,7 @@ def set_edge_attributes(G):
         if "lanes" in d:
             del d["lanes"]
 
-
         d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
-
-def clean_graph(G:MultiDiGraph) -> MultiDiGraph:
-    """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
-    merge_semantically_equivalent_road_tags(G)
-    collapse_road_tag_lists(G)
-    bike_safety_classification(G)
-    set_edge_attributes(G)
-
-    # ensures accurate 'length' in meters
-    G = ox.project_graph(G)           
-    G = ox.distance.add_edge_lengths(G)
-    return G
-
-#TODO
-def bike_safety_classification(G_bike:MultiDiGraph):
-    for _, _, data in G_bike.edges(data=True):
-        #TODO although im filtering based on road priority for classification, i still need to see the seperate bike and car lanes
-        # and in reality they should be 2 seperate graphs? but currently the bike can cycle over the car network
-        # ig in reality i just need to see how these connections are being stored
-
-        highway = data.get("highway")
-        # Defines legal access — whether bicycles may use the way.
-        bicycle = data.get("bicycle")
-        #Describes infrastructure type — if and how a bike facility exists
-        cycleway = data.get("cycleway")
-
-        #Separated 
-        if cycleway == 'track' or highway == "cycleway" or bicycle == "designated":
-            classification = SafetyClass.VERY_SAFE
-        #Demarcated Shared
-        #NOTE shared_lane is not considered safe as the cyclist is travelling on the same road with no markings
-        elif cycleway in {"shared", "lane",}:
-            classification = SafetyClass.SAFE
-
-        # MODERATE - Cyclist-friendly streets  
-        elif highway in {"non_motorised", "residential"}:
-            classification = SafetyClass.MODERATE
-
-        # CAUTION - Mixed traffic but manageable
-        elif highway == "service":
-            classification = SafetyClass.CAUTION
-        
-        # Dangerous - active traffic
-        elif highway in {"trunk", "secondary","primary", "tertiary"}:
-            classification = SafetyClass.DANGEROUS
-
-        #Country roads not suitable for urban transport
-        elif highway == "track":
-            #NOTE was "unsuitable" and has been changed to "moderate"
-            classification = SafetyClass.MODERATE
-        else:
-            classification = SafetyClass.UNCLASSIFIED
-
-        data["safety"] = classification
-        data["risk_factor"] = safety_to_risk_factor_map.get(data.get("safety",-1))
-
-        if classification == SafetyClass.DANGEROUS:
-            data["bike_allowed"] = False
-        #print(f"highway: {highway},\t\t bicycle: {bicycle},\t\t cycleway: {cycleway}") 
 
 
 #region Grade
@@ -276,69 +204,4 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         data["grade_abs"] = float(min(data["grade_abs"], 0.2))
 
     return G
-
 #endregion
-def simplify_multidigraph_in_place(G):
-    """Merge same-direction parallel edges in a MultiDiGraph while keeping it a MultiDiGraph."""
-    merged_edges = []
-
-    # Iterate over each directed node pair that has multiple edges
-    edges_to_process = list(G.edges())
-    for u, v in edges_to_process:
-        if not G.has_edge(u, v):
-            continue  # it may have been removed already
-
-        data_dict = G[u][v]
-        if len(data_dict) <= 1:
-            continue  # only one edge → nothing to merge
-
-        # gather all edge data
-        edges = list(data_dict.values())
-
-        agg = {}
-
-        # attributes to aggregate
-        numeric_attrs = ["length", "grade"]
-        summed_attrs  = ["lanes_car", "lanes_bike"]
-        bool_attrs    = ["car_allowed", "bike_allowed"]
-        categorical_attrs = ["highway", "safety", "cycleway"]
-
-        # average numeric values
-        for attr in numeric_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
-            if vals:
-                agg[attr] = float(np.mean(vals))
-
-        # sum lane counts
-        for attr in summed_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
-            if vals:
-                agg[attr] = int(np.sum(vals))
-
-        # boolean OR
-        for attr in bool_attrs:
-            agg[attr] = any(d.get(attr, False) for d in edges)
-
-        # pick most bike-friendly safety class if available
-        #TODO Nuh
-        for attr in categorical_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) not in (None, "", np.nan)]
-            if vals:
-                if attr == "safety" and "safety_to_risk_factor_map" in globals():
-                    agg[attr] = min(vals, key=lambda x: safety_to_risk_factor_map.get(x, 99))
-                else:
-                    agg[attr] = vals[0]
-            else:
-                agg[attr] = None
-
-        merged_edges.append((u, v, agg))
-
-        # remove the old parallel edges
-        for key in list(data_dict.keys()):
-            G.remove_edge(u, v, key)
-
-    # add back one merged edge per direction
-    for u, v, attrs in merged_edges:
-        G.add_edge(u, v, **attrs)
-
-    return G
