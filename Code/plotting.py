@@ -7,6 +7,8 @@ import matplotlib.colors as mcolors
 from matplotlib.ticker import PercentFormatter
 import numpy as np
 import osmnx as ox
+import libpysal
+
 
 from constants import SafetyClass
 
@@ -178,4 +180,71 @@ def plot_evaluation(df):
     axs[1,1].axis("off")
 
     fig.tight_layout()
+    plt.show()
+
+
+def assign_adjacent_colors(gdf, cmap_name="tab20"):
+    """Assign non-repeating colors to adjacent polygons using PySAL + NetworkX."""
+    # Build adjacency
+    w = libpysal.weights.Rook.from_dataframe(gdf, ids=gdf.index)
+
+    # Greedy coloring
+    G_adj = nx.Graph(w.neighbors)
+    coloring = nx.coloring.greedy_color(G_adj, strategy="largest_first")
+
+    # Attach color ids + map to hex
+    gdf = gdf.copy()
+    gdf["color_id"] = gdf.index.map(coloring)
+    cmap = plt.cm.get_cmap(cmap_name, gdf["color_id"].max() + 1)
+    gdf["color"] = gdf["color_id"].apply(lambda i: mcolors.to_hex(cmap(i)))
+
+    return gdf
+
+def plot_colored_polygons(
+    gdf,
+    G=None,
+    figsize=(10, 10),
+    alpha=0.7,
+    edgecolor="black",
+    linewidth=0.5,
+    title=None,
+    annotate=True,
+):
+    """Plot colored polygons, optionally overlaying an OSMnx graph."""
+    if G is not None:
+        gdf = gdf.to_crs(G.graph["crs"])
+    fig, ax = plt.subplots(figsize=figsize)
+    gdf.plot(ax=ax, color=gdf["color"], alpha=alpha, edgecolor=edgecolor, linewidth=linewidth)
+
+    # Overlay road network if provided
+    if G is not None:
+        ox.plot_graph(
+            G,
+            ax=ax,
+            node_size=0,
+            edge_color="black",
+            bgcolor="white",
+            show=False,
+            close=False,
+        )
+
+    # Annotate polygon names
+    if annotate and "name" in gdf.columns:
+        for _, row in gdf.iterrows():
+            if not row.geometry.is_empty:
+                centroid = row.geometry.centroid
+                ax.text(
+                    centroid.x,
+                    centroid.y,
+                    row["name"],
+                    fontsize=6,
+                    ha="center",
+                    va="center",
+                    color="black",
+                )
+
+    if title:
+        ax.set_title(title, fontsize=14)
+    ax.set_axis_off()
+    plt.tight_layout()
     plt.show()
