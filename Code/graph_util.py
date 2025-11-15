@@ -24,10 +24,11 @@ def make_region_subgraph(G:MultiDiGraph, region):
 
 def _filter_edges(G:MultiDiGraph, condition):
     #NOTE subgraph is view and read-only
+    #NOTE TODO made copy so its not read-only lol
     edges = [(u, v, k) 
                 for u, v, k, d in G.edges(keys=True, data=True) 
                 if condition(d)]
-    return G.edge_subgraph(edges)
+    return G.edge_subgraph(edges).copy()
 #endregion
 
 def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.SAFE):

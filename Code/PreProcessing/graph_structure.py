@@ -26,9 +26,9 @@ def simplify_multidigraph_in_place(G):
 
         # attributes to aggregate
         numeric_attrs = ["length", "grade"]
-        summed_attrs  = ["lanes_car", "lanes_bike"]
+        summed_attrs  = ["car_lanes", "bike_lanes"]
         bool_attrs    = ["car_allowed", "bike_allowed"]
-        categorical_attrs = ["highway", "safety", "cycleway", "region"]
+        categorical_attrs = ["highway", "safety", "cycleway", "region", "geometry"]
 
         # average numeric values
         for attr in numeric_attrs:

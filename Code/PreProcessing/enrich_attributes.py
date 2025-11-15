@@ -101,12 +101,14 @@ def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
 
     for u, v, k, d in G.edges(keys=True, data=True):
         # 1️⃣ Get geometry or reconstruct from node coordinates
+        #TODO move this elsewhere
         geom = d.get("geometry")
         if geom is None:
             geom = LineString([
                 (G.nodes[u]["x"], G.nodes[u]["y"]),
                 (G.nodes[v]["x"], G.nodes[v]["y"])
             ])
+            d["geometry"] = geom
         centroid = geom.centroid
         
 

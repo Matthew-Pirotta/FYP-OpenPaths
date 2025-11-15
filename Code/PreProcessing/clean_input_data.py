@@ -127,7 +127,7 @@ def collapse_lanes_list(G):
 def standardise_edge_atr(G):
     for u, v, _, d in G.edges(keys=True, data=True):
 
-        #Renames 'lanes' to 'lanes_car, and set to 1 as default
+        #Renames 'lanes' to 'car_lanes, and set to 1 as default
         lanes_val = d.get("lanes", 1)
         # Normalize to a single numeric value
         if isinstance(lanes_val, list):
