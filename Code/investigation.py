@@ -116,3 +116,12 @@ def print_node_data():
     print("\nneighbours")
     for neigh in neighs:
         print(neigh, my_graph.G_master.nodes[neigh])
+
+
+def print_missing_edges():
+    # count edges missing 'geometry' (or with geometry == None)
+    G = my_graph.G_master
+    missing = [(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if d.get("geometry") is None]
+    print("Edges without geometry:", len(missing), "/", G.number_of_edges(), f"({100*len(missing)/G.number_of_edges():.2f}%)")
+    # show up to 10 examples
+    print("Examples:", missing[:10])

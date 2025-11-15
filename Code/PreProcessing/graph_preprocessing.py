@@ -56,10 +56,10 @@ def clean_graph(G:MultiDiGraph):
     G = ox.distance.add_edge_lengths(G)
 
     enrich_attributes.bike_safety_classification(G)
-    gdf_localities = enrich_attributes.load_and_clean_localities()
+    gdf_localities_proj = enrich_attributes.load_and_clean_localities(G)
     #NOTE imp to project before assigning regions due to using x and y co-ordinates
-    G = enrich_attributes.assign_edge_regions(G, gdf_localities)
+    G = enrich_attributes.assign_edge_regions(G, gdf_localities_proj)
 
 
     graph_structure.simplify_multidigraph_in_place(G)
-    return G, gdf_localities
+    return G, gdf_localities_proj

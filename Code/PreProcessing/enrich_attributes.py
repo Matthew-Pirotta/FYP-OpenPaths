@@ -68,7 +68,7 @@ def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
     return G_bike
 
 #TODO move to clean_input data?
-def load_and_clean_localities() -> GeoDataFrame:
+def load_and_clean_localities(G) -> GeoDataFrame:
     #Get boundary GeoDataFrame for localities (e.g., admin_level = 8)
     #TODO malta is hardcoded
     gdf_localities = ox.features.features_from_place(
@@ -88,9 +88,11 @@ def load_and_clean_localities() -> GeoDataFrame:
             largest_poly  = max(row.geometry.geoms, key=lambda g: g.area)  # keep largest component
             gdf_localities.at[idx, "geometry"] = largest_poly 
 
+    gdf_localities_proj = gdf_localities.to_crs(G.graph["crs"])
+
     # Inspect results
     print("Number of localities:", len(gdf_localities))
-    return gdf_localities
+    return gdf_localities_proj
 
 
 def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
