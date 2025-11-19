@@ -1,14 +1,11 @@
 from networkx import MultiDiGraph
 import graph_util as graph_util
-import copy
 import osmnx as ox
 import networkx as nx
 import numpy as np
-import concurrent.futures
-import pandas as pd
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
-SAMPLE_K = None #NOTE set k to None to use full network
+SAMPLE_K = 10 #NOTE set k to None to use full network
 SEED = 12
 
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component
@@ -82,7 +79,7 @@ def network_evaluation(G:MultiDiGraph) -> dict:
     return results
 
 
-def heuristic(G_master:MultiDiGraph, G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED):
+def heuristic_func(G_master:MultiDiGraph, G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED):
     if k is not None:
         k = min(G_drive.number_of_nodes(),k) #ensure we dont sample more nodes than exist
     
@@ -94,53 +91,3 @@ def heuristic(G_master:MultiDiGraph, G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED
     #print(f"edge before: {G_master[u][v][k]}")
     graph_util.reallocate_edge(G_master, max_between_cent_edge)
     #print(f"edge after: {G_master[u][v][k]}" )
-
-def run_locality_task(args):
-    """Worker function for a single locality."""
-    name, G_sub, n_iterations = args
-
-    print(f"🏙️ Starting {name} in process")
-    G_working = copy.deepcopy(G_sub)
-
-    for i in range(n_iterations):
-        G_drive = graph_util.make_drive_subgraph(G_working)
-        heuristic(G_working, G_drive)
-
-    evaluation = network_evaluation(G_working)
-    evaluation["locality"] = name
-    return evaluation
-
-def run_global_parallel(G_master, subgraphs, n_iterations=10, max_workers=None):
-    """Run heuristic on all subgraphs in parallel."""
-    tasks = [(name, G_sub_master, n_iterations) for name, G_sub_master in subgraphs.items()]
-    results = []
-
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor: 
-        for result in executor.map(run_locality_task, tasks):
-            results.append(result)
-    
-    """    
-    for task in tasks:
-        result = run_locality_task(task)
-        results.append(result)
-    """
-
-    df_results = pd.DataFrame(results)
-    df_results.set_index("locality", inplace=True)
-    return df_results
-
-def run_global_serial(G_master, subgraphs, n_iterations=10, max_workers=None):
-    """Run heuristic on all subgraphs sequentially."""
-    tasks = [(name, G_sub_master, n_iterations) for name, G_sub_master in subgraphs.items()]
-    results = []
-    
-    for task in tasks:
-        result = run_locality_task(task)
-        results.append(result)
-
-    df_results = pd.DataFrame(results)
-    df_results.set_index("locality", inplace=True)
-    return df_results
-
-if __name__ == "__main__":
-    print("hello????")
