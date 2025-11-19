@@ -151,12 +151,13 @@ def standardise_edge_atr(G):
 
 def ensure_edge_geometries(G:MultiDiGraph):
     for u, v, k, d in G.edges(keys=True, data=True):
-     if geom is None:
-        geom = LineString([
-            (G.nodes[u]["x"], G.nodes[u]["y"]),
-            (G.nodes[v]["x"], G.nodes[v]["y"])
-        ])
-        d["geometry"] = geom
+        geom = d.get("geometry")
+        if geom is None:
+            geom = LineString([
+                (G.nodes[u]["x"], G.nodes[u]["y"]),
+                (G.nodes[v]["x"], G.nodes[v]["y"])
+            ])
+            d["geometry"] = geom
 
 
 #region Grade

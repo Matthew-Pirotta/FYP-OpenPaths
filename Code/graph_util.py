@@ -22,6 +22,9 @@ def make_protected_subgraph(G:MultiDiGraph):
 def make_region_subgraph(G:MultiDiGraph, region):
     return _filter_edges(G, lambda d: d.get("region") == region)
 
+def make_locality_subgraph(G:MultiDiGraph, locality):
+    return _filter_edges(G, lambda d: d.get("locality") == locality)
+
 def _filter_edges(G:MultiDiGraph, condition):
     #NOTE subgraph is view and read-only
     #NOTE TODO made copy so its not read-only lol

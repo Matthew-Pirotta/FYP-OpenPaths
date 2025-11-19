@@ -6,15 +6,14 @@ import networkx as nx
 import numpy as np
 from constants import SafetyClass
 
-
-#TODO very safe?
 safety_to_risk_factor_map = {
-    "safe": 1,
-    "moderate": 1.5,
-    "caution": 2 ,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
-    "dangerous": 4, #TODO highway twice as costly ig?
-    "unsuitable": 2,
-    "unclassified": 2,
+    SafetyClass.VERY_SAFE: 0.5, 
+    SafetyClass.SAFE: 1,
+    SafetyClass.MODERATE: 1.5,
+    SafetyClass.CAUTION: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
+    SafetyClass.DANGEROUS: 4,#TODO highway twice as costly ig?
+    SafetyClass.UNSUITABLE: 2,
+    SafetyClass.UNCLASSIFIED:2,
 }
 
 #TODO
@@ -58,7 +57,7 @@ def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
             classification = SafetyClass.UNCLASSIFIED
 
         data["safety"] = classification
-        data["risk_factor"] = safety_to_risk_factor_map.get(data.get("safety",-1))
+        data["risk_factor"] = float(safety_to_risk_factor_map.get(classification))
 
         if classification == SafetyClass.DANGEROUS:
             data["bike_allowed"] = False
