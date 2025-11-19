@@ -50,7 +50,7 @@ def calc_centrality(G_lcc:MultiDiGraph, k=SAMPLE_K, seed = SEED) -> dict:
     edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
     mean_edge_between_cent = float(np.mean(list(edge_between_cent.values())))
 
-    # betweenness centrality - measures how frequently a link lies on the shortest paths between all node pair
+    # node betweenness centrality - measures how frequently a node lies on the shortest paths between all node pair
     node_between_cent = nx.betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
     mean_node_between_cent = float(np.mean(list(node_between_cent.values())))
 
@@ -79,15 +79,45 @@ def network_evaluation(G:MultiDiGraph) -> dict:
     return results
 
 
-def heuristic_func(G_master:MultiDiGraph, G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED):
+def heuristic_edge_betweenness_centrality(G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED) -> tuple:
     if k is not None:
         k = min(G_drive.number_of_nodes(),k) #ensure we dont sample more nodes than exist
     
     edges_between_cent = nx.edge_betweenness_centrality(G_drive, weight="length", normalized=True, k=k, seed=seed)
     max_between_cent_edge = max(edges_between_cent, key=edges_between_cent.get)
-    print(max_between_cent_edge)
+    print(max_between_cent_edge)    
+    return max_between_cent_edge
+
+def _find_bridge_path(G_drive:MultiDiGraph, comp_a:MultiDiGraph, comp_b:MultiDiGraph) -> tuple[list,float]:
+    best_path, best_cost = None, float("inf")
+    for a in comp_a:
+        for b in comp_b:
+            try:
+                path = nx.shortest_path(G_drive, a, b, weight="length")
+                cost = nx.path_weight(G_drive, path, weight="length")
+                #print(f"trying {path}, for a cost of {cost}")
+                if cost < best_cost:
+                    best_cost, best_path = cost, path
+            except nx.NetworkXNoPath:
+                continue
+    return best_path, best_cost
+
+
+def heuristic_L2S(G_drive:MultiDiGraph) -> tuple:
+    components = sorted(nx.strongly_connected_components(G_drive), key=len, reverse=True)
+    if len(components) < 2:
+        print("Already connected")
+        return None
     
-    u,v,k = max_between_cent_edge
-    #print(f"edge before: {G_master[u][v][k]}")
-    graph_util.reallocate_edge(G_master, max_between_cent_edge)
-    #print(f"edge after: {G_master[u][v][k]}" )
+    largest = components[0]
+    second_largest = components[1]
+
+    path, cost = _find_bridge_path(G_drive, largest, second_largest)
+    if not path or len(path) < 2:
+        print("No bridge path found.")
+        return None
+
+    print(f"Best Path {path}")
+    u, v = path[0], path[1]
+    edge_to_reallocate = (u,v,0)
+    return edge_to_reallocate

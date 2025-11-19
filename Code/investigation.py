@@ -125,3 +125,9 @@ def print_missing_edges():
     print("Edges without geometry:", len(missing), "/", G.number_of_edges(), f"({100*len(missing)/G.number_of_edges():.2f}%)")
     # show up to 10 examples
     print("Examples:", missing[:10])
+
+def print_single_edge():
+    edges = list(G_master.edges(keys=True, data=True))
+    u, v, k, data = edges[0]
+    print(u, v, k)
+    print(data)

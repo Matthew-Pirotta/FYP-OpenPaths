@@ -66,7 +66,7 @@ def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
     return G_bike
 
 #TODO move to clean_input data?
-def load_and_clean_localities(G) -> GeoDataFrame:
+def load_and_clean_localities(G) -> tuple[GeoDataFrame, GeoDataFrame]:
     """
     Fetch and clean administrative boundaries for both level 7 (regions) and level 8 (localities) in Malta. Returns a unified GeoDataFrame projected to the graph CRS.
     """
@@ -90,25 +90,23 @@ def load_and_clean_localities(G) -> GeoDataFrame:
 
     gdf_localities_proj = gdf_localities.to_crs(G.graph["crs"])
 
+    gdf_regions_proj  = gdf_localities_proj[gdf_localities["admin_level"] == "7"]
+    gdf_local_proj = gdf_localities_proj[gdf_localities["admin_level"] == "8"]
+
     # Inspect results
     print("Number of localities:", len(gdf_localities))
-    return gdf_localities_proj
+    return gdf_regions_proj, gdf_local_proj
 
 
-def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
+def assign_edge_regions(G, gdf_regions_proj, gdf_local_proj) -> MultiDiGraph:
     """
     Assign each edge both a region (admin_level=7) and a locality/town (admin_level=8)
     based on the centroid of its geometry.
     If not contained in any polygon, the nearest polygon of each level is used.
     """
-    # Create spatial index
-    sindex = gdf_localities.sindex
-
     # Split for convenience
-    gdf_regions   = gdf_localities[gdf_localities["admin_level"] == "7"]
-    gdf_local     = gdf_localities[gdf_localities["admin_level"] == "8"]
-    sindex_regions = gdf_regions.sindex
-    sindex_local   = gdf_local.sindex
+    sindex_regions = gdf_regions_proj.sindex
+    sindex_local   = gdf_local_proj.sindex
 
     for u, v, k, d in G.edges(keys=True, data=True):
         geom = d.get("geometry")
@@ -119,13 +117,13 @@ def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
         # ---- Region (level 7) ----
         found_region = None
         for idx in sindex_regions.intersection(centroid.bounds):
-            row = gdf_regions.iloc[idx]
+            row = gdf_regions_proj.iloc[idx]
             if row.geometry.contains(centroid):
                 found_region = row["name"]
                 break
         if not found_region:  # fallback nearest
             min_dist, nearest_name = float("inf"), None
-            for idx, row in gdf_regions.iterrows():
+            for idx, row in gdf_regions_proj.iterrows():
                 dist = centroid.distance(row.geometry)
                 if dist < min_dist:
                     min_dist, nearest_name = dist, row["name"]
@@ -134,13 +132,13 @@ def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
         # ---- Locality (level 8) ----
         found_local = None
         for idx in sindex_local.intersection(centroid.bounds):
-            row = gdf_local.iloc[idx]
+            row = gdf_local_proj.iloc[idx]
             if row.geometry.contains(centroid):
                 found_local = row["name"]
                 break
         if not found_local:  # fallback nearest
             min_dist, nearest_name = float("inf"), None
-            for idx, row in gdf_local.iterrows():
+            for idx, row in gdf_local_proj.iterrows():
                 dist = centroid.distance(row.geometry)
                 if dist < min_dist:
                     min_dist, nearest_name = dist, row["name"]
