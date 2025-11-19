@@ -1,6 +1,5 @@
 from geopandas import GeoDataFrame
 from networkx import MultiDiGraph
-from shapely.geometry import LineString
 
 import osmnx as ox
 import networkx as nx
@@ -69,16 +68,18 @@ def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
 
 #TODO move to clean_input data?
 def load_and_clean_localities(G) -> GeoDataFrame:
-    #Get boundary GeoDataFrame for localities (e.g., admin_level = 8)
+    """
+    Fetch and clean administrative boundaries for both level 7 (regions) and level 8 (localities) in Malta. Returns a unified GeoDataFrame projected to the graph CRS.
+    """
     #TODO malta is hardcoded
     gdf_localities = ox.features.features_from_place(
         "Malta (Island)",
-        tags={"boundary": "administrative", "admin_level": "8"}
+        tags={"boundary": "administrative", "admin_level": ["7", "8"]}
     )
 
     #Data cleaning
     gdf_localities = gdf_localities[["name", "admin_level","geometry"]]
-    gdf_localities = gdf_localities[gdf_localities['admin_level'] == "8"]
+    gdf_localities = gdf_localities[gdf_localities["admin_level"].isin(["7", "8"])]
     gdf_localities = gdf_localities.dropna()
     gdf_localities = gdf_localities.drop_duplicates(subset=['name'])
 
@@ -96,41 +97,59 @@ def load_and_clean_localities(G) -> GeoDataFrame:
 
 
 def assign_edge_regions(G, gdf_localities) -> MultiDiGraph:
-    """Assign each edge a region based on centroid of geometry (fallback to nearest region)."""
+    """
+    Assign each edge both a region (admin_level=7) and a locality/town (admin_level=8)
+    based on the centroid of its geometry.
+    If not contained in any polygon, the nearest polygon of each level is used.
+    """
+    # Create spatial index
     sindex = gdf_localities.sindex
 
+    # Split for convenience
+    gdf_regions   = gdf_localities[gdf_localities["admin_level"] == "7"]
+    gdf_local     = gdf_localities[gdf_localities["admin_level"] == "8"]
+    sindex_regions = gdf_regions.sindex
+    sindex_local   = gdf_local.sindex
+
     for u, v, k, d in G.edges(keys=True, data=True):
-        # 1️⃣ Get geometry or reconstruct from node coordinates
-        #TODO move this elsewhere
         geom = d.get("geometry")
         if geom is None:
-            geom = LineString([
-                (G.nodes[u]["x"], G.nodes[u]["y"]),
-                (G.nodes[v]["x"], G.nodes[v]["y"])
-            ])
-            d["geometry"] = geom
+            continue
         centroid = geom.centroid
-        
 
-        # 2️⃣ Try containment first (fast exact match)
-        matches = list(sindex.intersection(centroid.bounds))
-        region_found = False
-        for idx in matches:
-            poly = gdf_localities.iloc[idx].geometry
-            if poly.contains(centroid):
-                d["region"] = gdf_localities.iloc[idx]["name"]
-                region_found = True
+        # ---- Region (level 7) ----
+        found_region = None
+        for idx in sindex_regions.intersection(centroid.bounds):
+            row = gdf_regions.iloc[idx]
+            if row.geometry.contains(centroid):
+                found_region = row["name"]
                 break
-
-        # 3️⃣ Fallback: assign to closest polygon (if no containment match)
-        if not region_found:
-            min_dist = float("inf")
-            nearest_name = None
-            for idx, row in gdf_localities.iterrows():
+        if not found_region:  # fallback nearest
+            min_dist, nearest_name = float("inf"), None
+            for idx, row in gdf_regions.iterrows():
                 dist = centroid.distance(row.geometry)
                 if dist < min_dist:
-                    min_dist = dist
-                    nearest_name = row["name"]
-            d["region"] = nearest_name
+                    min_dist, nearest_name = dist, row["name"]
+            found_region = nearest_name
+
+        # ---- Locality (level 8) ----
+        found_local = None
+        for idx in sindex_local.intersection(centroid.bounds):
+            row = gdf_local.iloc[idx]
+            if row.geometry.contains(centroid):
+                found_local = row["name"]
+                break
+        if not found_local:  # fallback nearest
+            min_dist, nearest_name = float("inf"), None
+            for idx, row in gdf_local.iterrows():
+                dist = centroid.distance(row.geometry)
+                if dist < min_dist:
+                    min_dist, nearest_name = dist, row["name"]
+            found_local = nearest_name
+
+        # Assign both attributes
+        d["region"] = found_region
+        d["locality"] = found_local
 
     return G
+

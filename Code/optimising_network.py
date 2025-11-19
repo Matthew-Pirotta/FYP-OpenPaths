@@ -43,9 +43,11 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
 def calc_centrality(G_lcc:MultiDiGraph, k=SAMPLE_K, seed = SEED) -> dict:
     """Calculate comprehensive centrality metrics for cycling network assessment"""
     #NOTE full centrality is O(n^3), k is instead used to approximate
-
-    num_nodes = len(G_lcc.nodes)
-    k_eff = min(k, num_nodes)
+    if k is not None:
+        num_nodes = len(G_lcc.nodes)
+        k_eff = min(k, num_nodes)
+    else:
+        k_eff = k
     
     # Edge betweenness centrality - connectors for network resilience
     edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
@@ -81,7 +83,9 @@ def network_evaluation(G:MultiDiGraph) -> dict:
 
 
 def heuristic(G_master:MultiDiGraph, G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED):
-    k = min(G_drive.number_of_nodes(),k) #ensure we dont sample more nodes than exist
+    if k is not None:
+        k = min(G_drive.number_of_nodes(),k) #ensure we dont sample more nodes than exist
+    
     edges_between_cent = nx.edge_betweenness_centrality(G_drive, weight="length", normalized=True, k=k, seed=seed)
     max_between_cent_edge = max(edges_between_cent, key=edges_between_cent.get)
     print(max_between_cent_edge)

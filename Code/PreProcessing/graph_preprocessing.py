@@ -50,6 +50,8 @@ def clean_graph(G:MultiDiGraph):
     clean_input_data.merge_semantically_equivalent_road_tags(G)
     clean_input_data.collapse_road_tag_lists(G)
     clean_input_data.standardise_edge_atr(G)
+    clean_input_data.ensure_edge_geometries(G)
+
 
     # ensures accurate 'length' in meters
     G = ox.project_graph(G)           

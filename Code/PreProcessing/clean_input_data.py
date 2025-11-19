@@ -3,6 +3,8 @@ import osmnx as ox
 import networkx as nx
 import numpy as np
 from constants import SafetyClass
+from shapely.geometry import LineString
+
 
 #region road tags
 def merge_semantically_equivalent_road_tags(G:MultiDiGraph):
@@ -146,6 +148,15 @@ def standardise_edge_atr(G):
             del d["lanes"]
 
         d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
+
+def ensure_edge_geometries(G:MultiDiGraph):
+    for u, v, k, d in G.edges(keys=True, data=True):
+     if geom is None:
+        geom = LineString([
+            (G.nodes[u]["x"], G.nodes[u]["y"]),
+            (G.nodes[v]["x"], G.nodes[v]["y"])
+        ])
+        d["geometry"] = geom
 
 
 #region Grade
