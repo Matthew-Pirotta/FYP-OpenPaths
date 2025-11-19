@@ -34,6 +34,7 @@ def _filter_edges(G:MultiDiGraph, condition):
     return G.edge_subgraph(edges).copy()
 #endregion
 
+#TODO currently can reallocate from the main road, big no no, need to set a more restrictive subgraph view
 def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.SAFE):
     """Simulate reallocating a road edge to bike use."""
     u,v,k = edge_id

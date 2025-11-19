@@ -1,2 +1,2 @@
-from .graph_optimisation import run_global_parallel
+from .graph_optimisation import run_global
 from .heuristic import *

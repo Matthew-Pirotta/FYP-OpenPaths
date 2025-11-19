@@ -1,5 +1,7 @@
+import copy
 import matplotlib.pyplot as plt
 import networkx as nx
+from networkx import MultiDiGraph
 import osmnx as ox
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -8,8 +10,10 @@ from matplotlib.ticker import PercentFormatter
 import numpy as np
 import osmnx as ox
 import libpysal
+from pandas import Series
 
 
+import graph_util
 from constants import SafetyClass
 
 def plot_road_classification(G_bike):
@@ -149,7 +153,7 @@ def plot_evaluation(df):
     fig, axs = plt.subplots(2,2, figsize=(12, 8))
 
     # --- Plot connectedness ---
-    axs[0,0].plot(df.index, df["num_components"], label="Number of Components", color="red")
+    axs[0,0].plot(df["iteration"], df["num_components"], label="Number of Components", color="red")
     axs[0,0].set_xlabel("Iteration")
     axs[0,0].set_ylabel("Components")
     axs[0,0].set_title("Network Fragmentation Over Time")
@@ -158,7 +162,7 @@ def plot_evaluation(df):
 
 
     #-- Plot LCC growth ---
-    axs[0,1].plot(df.index, df["lcc_length"]/1000, label="LCC length (km)", color="green")
+    axs[0,1].plot(df["iteration"], df["lcc_length"]/1000, label="LCC length (km)", color="green")
     axs[0,1].set_xlabel("Iteration")
     axs[0,1].set_ylabel("Length (km)")
     axs[0,1].set_title("Largest Connected Component Length Over Time")
@@ -167,10 +171,9 @@ def plot_evaluation(df):
 
 
     # --- Plot centrality metrics ---
-    df[["mean_edge_betweenness", "mean_node_betweenness", "mean_node_closeness"]].plot(
-        ax=axs[1,0],
-        linewidth=2
-    )
+    cols = ["mean_edge_betweenness", "mean_node_betweenness", "mean_node_closeness"]
+    df_plot = df.sort_values("iteration")  # ensure correct order
+    df_plot.plot(x="iteration", y=cols, ax=axs[1,0], linewidth=2)
     axs[1,0].set_xlabel("Iteration")
     axs[1,0].set_ylabel("Average Centrality Value")
     axs[1,0].set_title("Network Centrality Metrics During Simulation")
@@ -180,6 +183,67 @@ def plot_evaluation(df):
     axs[1,1].axis("off")
 
     fig.tight_layout()
+    plt.show()
+
+def plot_network_evolution(G_master:MultiDiGraph, full_diff:Series):
+    G_display = copy.deepcopy(G_master)
+    for diff_list in full_diff:
+        for edge_diff in diff_list:
+            graph_util.reallocate_edge(G_display, edge_diff)
+        plot_road_classification(G_display)
+
+
+def plot_network_evolution2(G_master, diffs_by_iter):
+    diffs_by_iter = list(diffs_by_iter.explode())
+
+    fig, ax = ox.plot_graph(
+        G_master,
+        node_size=0,
+        edge_color="lightgray",
+        edge_linewidth=0.3,
+        show=False,
+        close=False
+    )
+
+    cmap = plt.cm.plasma
+    norm = plt.Normalize(0, len(diffs_by_iter))
+
+    for i, (u, v, k) in enumerate(diffs_by_iter):
+        color = cmap(norm(i))
+        if G_master.has_edge(u, v, k):
+            data = G_master[u][v][k]
+            geom = data.get("geometry")
+            if geom is None:
+                # Fallback to straight line between node coords
+                x1, y1 = G_master.nodes[u]["x"], G_master.nodes[u]["y"]
+                x2, y2 = G_master.nodes[v]["x"], G_master.nodes[v]["y"]
+                ax.plot([x1, x2], [y1, y2], color=color, linewidth=1.2)
+            else:
+                x, y = geom.xy
+                ax.plot(x, y, color=color, linewidth=1.2)
+
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    fig.colorbar(sm, ax=ax, label="Iteration")
+    ax.set_title("Incremental Reallocations Over Time")
+    plt.show()
+
+
+def plot_snapshots(G_master, diffs_by_iter:Series, snapshot_iters=[0, 10, 50, 100]):
+    fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4*len(snapshot_iters), 6))
+    G_temp = G_master.copy()
+
+    diffs_by_iter = list(diffs_by_iter.explode())
+    for ax, it in zip(axs, snapshot_iters):
+        for edge_diff in diffs_by_iter[:it]:
+            graph_util.reallocate_edge(G_temp, edge_diff)
+        edge_colors = [
+            "green" if d.get("safety") == SafetyClass.SAFE else "gray"
+            for _, _, d in G_temp.edges(data=True)
+        ]
+        ox.plot_graph(G_temp, node_size=0, edge_color=edge_colors, edge_linewidth=0.4,
+                      ax=ax, show=False, close=False)
+        ax.set_title(f"Iteration {it}")
+    plt.tight_layout()
     plt.show()
 
 
