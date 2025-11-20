@@ -187,14 +187,6 @@ def plot_evaluation(df):
     fig.tight_layout()
     plt.show()
 
-def plot_network_evolution(G_master:MultiDiGraph, full_diff:Series):
-    G_display = copy.deepcopy(G_master)
-    for diff_list in full_diff:
-        for edge_diff in diff_list:
-            graph_util.reallocate_edge(G_display, edge_diff)
-        plot_road_classification(G_display)
-
-
 def plot_network_evolution2(G_master, diffs_by_iter):
     diffs_by_iter = list(diffs_by_iter.explode())
 
@@ -286,7 +278,7 @@ def plot_snapshots(
             show=False,
             close=False,
         )
-        
+
         ax.set_facecolor("k")        # ensure black background
         ax.figure.set_facecolor("k") # prevent white padding
         ax.set_title(f"Iteration {it}", color="white")
