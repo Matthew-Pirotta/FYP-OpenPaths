@@ -5,7 +5,6 @@ import networkx as nx
 import numpy as np
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
-SAMPLE_K = 10 #NOTE set k to None to use full network
 SEED = 12
 
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component
@@ -37,14 +36,14 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
             
     pass"""
 
-def calc_centrality(G_lcc:MultiDiGraph, k=SAMPLE_K, seed = SEED) -> dict:
+def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
     """Calculate comprehensive centrality metrics for cycling network assessment"""
     #NOTE full centrality is O(n^3), k is instead used to approximate
-    if k is not None:
+    if k_sample is not None:
         num_nodes = len(G_lcc.nodes)
-        k_eff = min(k, num_nodes)
+        k_eff = min(k_sample, num_nodes)
     else:
-        k_eff = k
+        k_eff = k_sample
     
     # Edge betweenness centrality - connectors for network resilience
     edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
@@ -70,20 +69,20 @@ def calc_centrality(G_lcc:MultiDiGraph, k=SAMPLE_K, seed = SEED) -> dict:
     }
 
 
-def network_evaluation(G:MultiDiGraph) -> dict:
+def network_evaluation(G:MultiDiGraph, k_sample=None) -> dict:
     G_lcc = ox.truncate.largest_component(G, strongly=True) #NOTE strongly connected true since roads cycle infrastructure is directional
 
     connectedness = calc_connectedness(G, G_lcc)
-    centrality  = calc_centrality(G_lcc)
+    centrality  = calc_centrality(G_lcc, k_sample=k_sample)
     results = {**connectedness, **centrality}
     return results
 
 
-def heuristic_edge_betweenness_centrality(G_drive:MultiDiGraph, k=SAMPLE_K, seed=SEED) -> tuple:
-    if k is not None:
-        k = min(G_drive.number_of_nodes(),k) #ensure we dont sample more nodes than exist
+def heuristic_edge_betweenness_centrality(G_drive:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
+    if k_sample is not None:
+        k_sample = min(G_drive.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
     
-    edges_between_cent = nx.edge_betweenness_centrality(G_drive, weight="length", normalized=True, k=k, seed=seed)
+    edges_between_cent = nx.edge_betweenness_centrality(G_drive, weight="length", normalized=True, k=k_sample, seed=seed)
     max_between_cent_edge = max(edges_between_cent, key=edges_between_cent.get)
     print(max_between_cent_edge)    
     return max_between_cent_edge

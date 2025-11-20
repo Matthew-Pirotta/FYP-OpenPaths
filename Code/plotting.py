@@ -9,6 +9,7 @@ import matplotlib.colors as mcolors
 from matplotlib.ticker import PercentFormatter
 import numpy as np
 import osmnx as ox
+import pandas as pd
 import libpysal
 from pandas import Series
 
@@ -171,7 +172,8 @@ def plot_evaluation(df):
 
 
     # --- Plot centrality metrics ---
-    cols = ["mean_edge_betweenness", "mean_node_betweenness", "mean_node_closeness"]
+   
+    cols = ["mean_edge_betweenness", "mean_node_betweenness", ] #"mean_node_closeness"
     df_plot = df.sort_values("iteration")  # ensure correct order
     df_plot.plot(x="iteration", y=cols, ax=axs[1,0], linewidth=2)
     axs[1,0].set_xlabel("Iteration")
@@ -228,21 +230,80 @@ def plot_network_evolution2(G_master, diffs_by_iter):
     plt.show()
 
 
-def plot_snapshots(G_master, diffs_by_iter:Series, snapshot_iters=[0, 10, 50, 100]):
-    fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4*len(snapshot_iters), 6))
-    G_temp = G_master.copy()
+def plot_snapshots(
+    G_master,
+    diffs_by_iter: pd.Series,
+    snapshot_iters=[0, 10, 50, 100],
+    show_classification=True
+):
+    """Plot network snapshots at given iterations with optional safety classification coloring."""
+    fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
+    G_temp = copy.deepcopy(G_master)
 
-    diffs_by_iter = list(diffs_by_iter.explode())
+    # Flatten nested list of diffs
+    all_diffs = list(diffs_by_iter.explode())
+
+    # Define safety color map
+    safety_to_color_map = {
+        SafetyClass.VERY_SAFE: "magenta",
+        SafetyClass.SAFE: "green",
+        SafetyClass.MODERATE: "yellow",
+        SafetyClass.CAUTION: "orange",
+        SafetyClass.DANGEROUS: "red",
+        SafetyClass.UNSUITABLE: "brown",
+        SafetyClass.UNCLASSIFIED: "gray",
+    }
+
     for ax, it in zip(axs, snapshot_iters):
-        for edge_diff in diffs_by_iter[:it]:
-            graph_util.reallocate_edge(G_temp, edge_diff)
-        edge_colors = [
-            "green" if d.get("safety") == SafetyClass.SAFE else "gray"
+        # Apply reallocations up to this iteration
+        for e in all_diffs[:it]:
+            graph_util.reallocate_edge(G_temp, e)
+
+        # Choose coloring scheme
+        if show_classification:
+            edge_colors = [
+                safety_to_color_map.get(d.get("safety"), "gray")
+                for _, _, d in G_temp.edges(data=True)
+            ]
+        else:
+            edge_colors = [
+                "green" if d.get("safety") == SafetyClass.SAFE else "gray"
+                for _, _, d in G_temp.edges(data=True)
+            ]
+
+        edge_linewidth = [
+            1.2 if d.get("safety") == SafetyClass.SAFE else 0.5
             for _, _, d in G_temp.edges(data=True)
         ]
-        ox.plot_graph(G_temp, node_size=0, edge_color=edge_colors, edge_linewidth=0.4,
-                      ax=ax, show=False, close=False)
-        ax.set_title(f"Iteration {it}")
+
+        ox.plot_graph(
+            G_temp,
+            node_size=0,
+            edge_color=edge_colors,
+            edge_linewidth=edge_linewidth,
+            ax=ax,
+            bgcolor="k",
+            show=False,
+            close=False,
+        )
+        
+        ax.set_facecolor("k")        # ensure black background
+        ax.figure.set_facecolor("k") # prevent white padding
+        ax.set_title(f"Iteration {it}", color="white")
+
+    # Add one shared legend for all subplots
+    if show_classification:
+        legend_elements = [
+            mpatches.Patch(color=color, label=label.replace("_", " ").title())
+            for label, color in safety_to_color_map.items()
+        ]
+        axs[-1].legend(
+            handles=legend_elements,
+            title="Road Safety Classification",
+            loc="lower right",
+            fontsize=8,
+        )
+
     plt.tight_layout()
     plt.show()
 
