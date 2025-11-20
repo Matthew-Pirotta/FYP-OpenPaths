@@ -9,23 +9,23 @@ from collections import Counter
 from constants import SafetyClass
 
 # region Subgraph generators
-def make_drive_subgraph(G:MultiDiGraph):
+def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("car_allowed", False))
 
 #TODO need to set dangerous roads and bridges as not bikeable
-def make_bikeable_subgraph(G:MultiDiGraph):
+def make_bikeable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("bike_allowed", False))
 
-def make_protected_subgraph(G:MultiDiGraph):
+def make_protected_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("safety") in ["safe", "very_safe"])
 
-def make_region_subgraph(G:MultiDiGraph, region):
+def make_region_subgraph(G:MultiDiGraph, region)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("region") == region)
 
-def make_locality_subgraph(G:MultiDiGraph, locality):
+def make_locality_subgraph(G:MultiDiGraph, locality) -> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("locality") == locality)
 
-def _filter_edges(G:MultiDiGraph, condition):
+def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
     #NOTE TODO made copy so its not read-only lol
     edges = [(u, v, k) 

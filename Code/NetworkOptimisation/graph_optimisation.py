@@ -20,12 +20,12 @@ def run_locality_task(args):
     sig = inspect.signature(heuristic_func)
     for i in range(n_iterations):
         G_drive = graph_util.make_drive_subgraph(G_working)
+        G_drive_bikeable = graph_util.make_bikeable_subgraph(G_drive)
 
         if "k_sample" in sig.parameters:
-            edge_to_reallocate = heuristic_func(G_drive, k_sample=k_sample)
+            edge_to_reallocate = heuristic_func(G_drive_bikeable, k_sample=k_sample)
         else:
-            edge_to_reallocate = heuristic_func(G_drive)
-
+            edge_to_reallocate = heuristic_func(G_drive_bikeable)
 
         edge_diffs.append(edge_to_reallocate)
         #print(f"edge before: {G_working[u][v][k]}")

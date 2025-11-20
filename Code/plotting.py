@@ -225,10 +225,12 @@ def plot_network_evolution2(G_master, diffs_by_iter):
 def plot_snapshots(
     G_master,
     diffs_by_iter: pd.Series,
-    snapshot_iters=[0, 10, 50, 100],
+    n_iters:int,
+    num_snapshots = 4,
     show_classification=True
 ):
     """Plot network snapshots at given iterations with optional safety classification coloring."""
+    snapshot_iters = np.linspace(0,n_iters, num_snapshots, dtype=int)
     fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
     G_temp = copy.deepcopy(G_master)
 

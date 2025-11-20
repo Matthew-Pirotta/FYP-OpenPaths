@@ -1,4 +1,6 @@
+import random
 from networkx import MultiDiGraph
+from sympy import centroid
 import graph_util as graph_util
 import osmnx as ox
 import networkx as nx
@@ -87,7 +89,12 @@ def heuristic_edge_betweenness_centrality(G_drive:MultiDiGraph, k_sample=None, s
     print(max_between_cent_edge)    
     return max_between_cent_edge
 
-def _find_bridge_path(G_drive:MultiDiGraph, comp_a:MultiDiGraph, comp_b:MultiDiGraph) -> tuple[list,float]:
+def heuristic_random(G_drive:MultiDiGraph) -> tuple:
+    edges = list(G_drive.edges)
+    random_edge = random.choice(edges)
+    return random_edge
+
+def _find_bridge_path(G_drive:MultiDiGraph, comp_a:set, comp_b:set) -> tuple[list,float]:
     best_path, best_cost = None, float("inf")
     for a in comp_a:
         for b in comp_b:
@@ -102,21 +109,98 @@ def _find_bridge_path(G_drive:MultiDiGraph, comp_a:MultiDiGraph, comp_b:MultiDiG
     return best_path, best_cost
 
 
-def heuristic_L2S(G_drive:MultiDiGraph) -> tuple:
+def _find_closest_component(G:MultiDiGraph, main_component:set, other_components:list[set]):
+    main_centroid = _calc_network_centroid(G, main_component)
+    
+    min_dist = float("inf")
+    closest_component = None
+    for comp in other_components:
+        comp_centroid = _calc_network_centroid(G, comp)
+        dist = np.linalg.norm(main_centroid - comp_centroid)
+
+        if dist < min_dist:
+            min_dist = dist
+            closest_component = comp
+    
+    return closest_component, min_dist
+
+def _select_bridge_edge(G: MultiDiGraph, comp_a: set, path: list) -> tuple:
+    """Find the first edge that leaves component A."""
+    for i in range(len(path) - 1):
+        if path[i] in comp_a and path[i + 1] not in comp_a:
+            return (path[i], path[i + 1], 0)
+    return (path[0], path[1], 0)
+
+def _connect_components(G: MultiDiGraph, source_comp: set, target_comp: set, label: str):
+    path, cost = _find_bridge_path(G, source_comp, target_comp)
+    if not path or len(path) < 2:
+        print(f"[{label}] No bridge path found.")
+        return None
+    #print(f"[{label}] Best path: {path}, cost={cost:.2f}")
+    edge = _select_bridge_edge(G, source_comp, path)
+    return edge
+
+def heuristic_L2S(G: MultiDiGraph) -> tuple:
+    """Largest-to-Second: Connects the two largest components."""
+    comps = sorted(nx.strongly_connected_components(G), key=len, reverse=True)
+    if len(comps) < 2:
+        print("Already connected")
+        return None
+    edge_to_reallocate = _connect_components(G, comps[0], comps[1], "L2S") 
+    return edge_to_reallocate
+
+
+def heuristic_L2C(G_drive:MultiDiGraph):
     components = sorted(nx.strongly_connected_components(G_drive), key=len, reverse=True)
     if len(components) < 2:
         print("Already connected")
         return None
     
     largest = components[0]
-    second_largest = components[1]
+    others = components[1:]
 
-    path, cost = _find_bridge_path(G_drive, largest, second_largest)
-    if not path or len(path) < 2:
-        print("No bridge path found.")
-        return None
+    closest_component, _ = _find_closest_component(G_drive, largest, others)
 
-    print(f"Best Path {path}")
-    u, v = path[0], path[1]
-    edge_to_reallocate = (u,v,0)
+    edge_to_reallocate = _connect_components(G_drive, largest,closest_component, "L2C")
     return edge_to_reallocate
+
+def heuristic_R2C(G_drive:MultiDiGraph):
+    components = list(nx.strongly_connected_components(G_drive))
+    if len(components) < 2:
+        print("Already connected")
+        return None
+    
+    random.shuffle(components)
+    
+    random_component = components[0]
+    other_components = components[1:]
+
+    closest_component, _ = _find_closest_component(G_drive, random_component, other_components)
+
+    edge_to_reallocate = _connect_components(G_drive, random_component,closest_component, "R2C")
+    return edge_to_reallocate
+
+def heuristic_CC(G_drive:MultiDiGraph):
+    components = list(nx.strongly_connected_components(G_drive))
+    if len(components) < 2:
+        print("Already connected")
+        return None
+    
+    min_dist = float("inf")
+    best_pair = (None, None)
+
+    for i, comp in enumerate(components):
+        other_components = components[i + 1:]
+        closest_component, dist = _find_closest_component(G_drive, comp, other_components)
+        if closest_component and dist < min_dist:
+                min_dist = dist
+                best_pair = (comp, closest_component)
+
+    comp_a, comp_b = best_pair
+    edge_to_reallocate = _connect_components(G_drive, comp_a, comp_b, "CC")
+    return edge_to_reallocate
+
+def _calc_network_centroid(G:MultiDiGraph, nodes:set)-> np.ndarray:
+    coords = np.array([[G.nodes[n]["x"], G.nodes[n]["y"]] for n in nodes])
+    centroid = coords.mean(axis=0)
+    return centroid
