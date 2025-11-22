@@ -1,7 +1,7 @@
 - Get some consensus of how much ppl prefer detour for safety over risky direct.
 - cant cycle in tunnels, or highways (maybe)
 - halting condition for heurisitc approach?
-
+- **Pairwise continuity** 
 ----------
 URECA:
 - Unpublished secondary data 11 - 13

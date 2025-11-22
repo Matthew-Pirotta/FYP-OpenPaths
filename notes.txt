@@ -44,6 +44,31 @@ MultiDiGraphs are nonplanar directed graphs with possible self-loops and paralle
 Also if there are multiple lanes in same direction there will be a lanes attribute.
 
 -------
+Edge attributes:
+
+variables:
+car_lanes: int
+bike_lanes: int
+
+classifications:
+highway (road type)
+bicycle (if bikes are allowed)
+cycleway (bike infrastructure)
+safety ()
+risk_factor: float
+car_allowed: bool (is from drive network)
+bike_allowed: bool (True if from bike network, then set false if safety class is Dangerous)
+reallocatable: bool (False if bridge or car not allowed)
+
+constants:
+grade: float
+region: str
+locality: str
+-----
+
+the biking network which is being expanded is the pure protected graph
+
+------
 
 Resources
 

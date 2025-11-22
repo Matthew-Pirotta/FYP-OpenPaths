@@ -223,19 +223,19 @@ def plot_network_evolution2(G_master, diffs_by_iter):
 
 
 def plot_snapshots(
-    G_master,
-    diffs_by_iter: pd.Series,
-    n_iters:int,
+    G_master:MultiDiGraph,
+    diff_log_series: pd.Series,
     num_snapshots = 4,
     show_classification=True
 ):
     """Plot network snapshots at given iterations with optional safety classification coloring."""
-    snapshot_iters = np.linspace(0,n_iters, num_snapshots, dtype=int)
     fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
     G_temp = copy.deepcopy(G_master)
 
     # Flatten nested list of diffs
-    all_diffs = list(diffs_by_iter.explode())
+    diff_log = list(diff_log_series.explode())
+    snapshot_iters = np.linspace(0,len(diff_log), num_snapshots, dtype=int)
+
 
     # Define safety color map
     safety_to_color_map = {
@@ -250,8 +250,13 @@ def plot_snapshots(
 
     for ax, it in zip(axs, snapshot_iters):
         # Apply reallocations up to this iteration
-        for e in all_diffs[:it]:
-            graph_util.reallocate_edge(G_temp, e)
+        for diff_data in diff_log[:it]:
+            diff_type = diff_data.get("type")
+            edge = diff_data.get("edge")
+            if diff_type == "fixed":
+                graph_util.reallocate_edge(G_temp, edge)
+            elif diff_type == "realloc":
+                graph_util.set_edge_attribute(G_temp, "reallocatable", False)
 
         # Choose coloring scheme
         if show_classification:
@@ -260,13 +265,17 @@ def plot_snapshots(
                 for _, _, d in G_temp.edges(data=True)
             ]
         else:
-            edge_colors = [
-                "green" if d.get("safety") == SafetyClass.SAFE else "gray"
-                for _, _, d in G_temp.edges(data=True)
-            ]
+            edge_colors = []
+            for _, _, d in G_temp.edges(data=True):
+                if d.get("safety") == SafetyClass.VERY_SAFE:
+                    edge_colors.append("green")
+                elif d.get("reallocatable") == False:
+                    edge_colors.append("red")
+                else:
+                    edge_colors.append("gray")
 
         edge_linewidth = [
-            1.2 if d.get("safety") == SafetyClass.SAFE else 0.5
+            1.2 if d.get("safety") == SafetyClass.VERY_SAFE else 0.5
             for _, _, d in G_temp.edges(data=True)
         ]
 
@@ -297,6 +306,19 @@ def plot_snapshots(
             loc="lower right",
             fontsize=8,
         )
+    else:
+        legend_elements = [
+            mpatches.Patch(color="green", label="Bike infrastructure"),
+            mpatches.Patch(color="red", label="Fixed Car lane"),
+            mpatches.Patch(color="gray", label="Other"),
+        ]
+        axs[-1].legend(
+            handles=legend_elements,
+            title="Legend",
+            loc="lower right",
+            fontsize=8,
+        )
+
 
     plt.tight_layout()
     plt.show()

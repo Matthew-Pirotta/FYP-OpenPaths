@@ -98,6 +98,27 @@ def load_and_clean_localities(G) -> tuple[GeoDataFrame, GeoDataFrame]:
     return gdf_regions_proj, gdf_local_proj
 
 
+
+def tag_reallocatable_edges(G:MultiDiGraph):
+    # mark bridges as not reallocatable
+    bridges = set(nx.bridges(G.to_undirected()))
+    for u, v, k, d in G.edges(keys=True, data=True):
+        if (u, v) in bridges or (v, u) in bridges:
+            d["reallocatable"] = False
+
+        #Can only reallocate from car lanes
+        elif d.get("car_allowed", False) == False or d.get("car_lanes",0) <= 0:
+            d["reallocatable"] = False
+
+        #Can only reallocate from where its bikeable (i.e not tunnels or highways)
+        elif d.get("bike_allowed") == False:
+            d["reallocatable"] = False
+
+        else:
+            d["reallocatable"] = True
+
+
+
 def assign_edge_regions(G, gdf_regions_proj, gdf_local_proj) -> MultiDiGraph:
     """
     Assign each edge both a region (admin_level=7) and a locality/town (admin_level=8)

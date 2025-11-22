@@ -16,6 +16,10 @@ def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
 def make_bikeable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("bike_allowed", False))
 
+def make_reallocatable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
+    #concern might have car_lanes = 0, car_allowed = false, but somehow reallocatable = True?
+    return _filter_edges(G, lambda d: d.get("reallocatable") == True)
+
 def make_protected_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("safety") in ["safe", "very_safe"])
 
@@ -34,8 +38,25 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     return G.edge_subgraph(edges).copy()
 #endregion
 
+def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
+    """Updates the reallocatable attribute in place"""
+    # Work on a shallow copy (just edge structure)
+    u,v,k = edge_id
+    d = G_drive[u][v][k]
+    car_lanes = d.get("car_lanes")
+    #Reachability is not affected if a lane is removed
+    if car_lanes >= 2:
+        return True
+
+    G_test = copy.deepcopy(G_drive)
+    G_test.remove_edge(u, v, k)
+    stays_connected = nx.is_strongly_connected(G_test)
+
+    # Choose strong or weak connectivity depending on road model
+    return stays_connected
+
 #TODO currently can reallocate from the main road, big no no, need to set a more restrictive subgraph view
-def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.SAFE):
+def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.VERY_SAFE):
     """Simulate reallocating a road edge to bike use."""
     u,v,k = edge_id
     #NOTE Since the 'MultiGraph' has only one edge per direction, k will always be 0
@@ -43,6 +64,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.SAFE):
     d["car_lanes"] = max(d["car_lanes"]-1,0)
     if d["car_lanes"] == 0:
         d["car_allowed"] = False
+        d["reallocatable"] = False
 
     #removing one car lane adds 1 bike lane in each direction
     d["bike_allowed"] = True
@@ -89,3 +111,9 @@ def summarise_road_type_stats(G:MultiDiGraph):
     for cycleway_type, count in cycleway_counts.most_common():
         print(f"{cycleway_type}: {count}")
 
+
+def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) -> MultiDiGraph:
+    u,v,k = edge
+    data = G[u][v][k]
+    data[attribute_name] = value
+    return G

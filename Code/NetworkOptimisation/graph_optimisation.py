@@ -5,7 +5,6 @@ import osmnx as ox
 import pandas as pd
 import inspect
 
-
 from . import heuristic
 
 def run_locality_task(args):
@@ -16,35 +15,47 @@ def run_locality_task(args):
     G_working = copy.deepcopy(G_sub)
 
     evaluations = []
-    edge_diffs = []
+    diff_log = []
     sig = inspect.signature(heuristic_func)
+    #TODO evaluate before first reallocation
     for i in range(n_iterations):
         G_drive = graph_util.make_drive_subgraph(G_working)
-        G_drive_bikeable = graph_util.make_bikeable_subgraph(G_drive)
+        G_bikeable = graph_util.make_bikeable_subgraph(G_working)
+        G_realloc = graph_util.make_reallocatable_subgraph(G_bikeable)
+        #print(f"G_realloc.number_of_edges(): {G_realloc.number_of_edges()}")
+        if G_realloc.number_of_edges() == 0:
+            print(f"🚫 No reallocatable edges left for {name}, stopping early at iteration {i}")
+            break 
 
         if "k_sample" in sig.parameters:
-            edge_to_reallocate = heuristic_func(G_drive_bikeable, k_sample=k_sample)
+            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc, k_sample=k_sample)
         else:
-            edge_to_reallocate = heuristic_func(G_drive_bikeable)
+            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,)
+        can_reallocate = graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate)
 
-        edge_diffs.append(edge_to_reallocate)
-        #print(f"edge before: {G_working[u][v][k]}")
-        graph_util.reallocate_edge(G_working, edge_to_reallocate)
-        #print(f"edge after: {G_working[u][v][k]}" )
+        if can_reallocate:
+            diff_log.append({"type":"realloc", "edge":edge_to_reallocate})
+            #print(f"edge before: {G_working[u][v][k]}")
+            graph_util.reallocate_edge(G_working, edge_to_reallocate)
+            #print(f"edge after: {G_working[u][v][k]}" )
+        else:
+            u,v,k = edge_to_reallocate
+            G_working[u][v][k]["reallocatable"] = False
+            diff_log.append({"type":"fixed", "edge": edge_to_reallocate})
 
         if i % EVALUATION_MOD == 0:
             evaluation = heuristic.network_evaluation(G_working, k_sample=k_sample)
             evaluation["locality"] = name
             evaluation["iteration"] = i
-            evaluation["edge_diffs"] = list(edge_diffs) # store a copy so later clears don't mutate stored evaluations
-            edge_diffs.clear()
+            evaluation["diff_log"] = list(diff_log) # store a copy so later clears don't mutate stored evaluations
+            diff_log.clear()
             evaluations.append(evaluation)
 
     #NOTE also evaluate on the last final iteration
     evaluation = heuristic.network_evaluation(G_working, k_sample=k_sample)
     evaluation["locality"] = name
     evaluation["iteration"] = n_iterations
-    evaluation["edge_diffs"] = list(edge_diffs)
+    evaluation["diff_log"] = list(diff_log)
     evaluations.append(evaluation)
 
     return evaluations

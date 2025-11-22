@@ -1,5 +1,5 @@
 import random
-from networkx import MultiDiGraph
+from networkx import MultiDiGraph, display
 from sympy import centroid
 import graph_util as graph_util
 import osmnx as ox
@@ -79,13 +79,26 @@ def network_evaluation(G:MultiDiGraph, k_sample=None) -> dict:
     results = {**connectedness, **centrality}
     return results
 
+def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDiGraph, G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
 
-def heuristic_edge_betweenness_centrality(G_drive:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
+    reallocatable_edges = set(G_realloc.edges(keys=True))
+
     if k_sample is not None:
-        k_sample = min(G_drive.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
-    
-    edges_between_cent = nx.edge_betweenness_centrality(G_drive, weight="length", normalized=True, k=k_sample, seed=seed)
-    max_between_cent_edge = max(edges_between_cent, key=edges_between_cent.get)
+        k_sample = min(G_bikeable.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
+
+    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="length", normalized=True, k=k_sample, seed=seed)
+
+
+    reallocatable_edges_between_cent = {k: v for k, v in edges_between_cent.items() if k in reallocatable_edges}
+    #Some sort of intersection on the edge_between centrality
+
+
+    #print(f"edges_between_cent: {edges_between_cent}")
+    #print(f"reallocatable_edges:  {reallocatable_edges}")
+    #print(f"G_reallocatable.number_of_edges() IN DA FUNCTION: {G_realloc.number_of_edges()}")
+    #print(f"reallocatable_edges_between_cent: {reallocatable_edges_between_cent}")
+
+    max_between_cent_edge = max(reallocatable_edges_between_cent, key=reallocatable_edges_between_cent.get)
     print(max_between_cent_edge)    
     return max_between_cent_edge
 

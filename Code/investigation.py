@@ -130,4 +130,4 @@ def print_single_edge():
     edges = list(G_master.edges(keys=True, data=True))
     u, v, k, data = edges[0]
     print(u, v, k)
-    print(data)
+    display(data)
