@@ -85,6 +85,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.VERY_SAFE):
         attrs["car_lanes"] = 0
         attrs["geometry"] = d["geometry"].reverse() #road shape
         attrs["grade"] = -d["grade"]
+        attrs["reallocatable"] = False
         G.add_edge(v, u, **attrs)
 
 def summarise_road_type_stats(G:MultiDiGraph):

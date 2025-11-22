@@ -229,12 +229,12 @@ def plot_snapshots(
     show_classification=True
 ):
     """Plot network snapshots at given iterations with optional safety classification coloring."""
-    fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
-    G_temp = copy.deepcopy(G_master)
-
     # Flatten nested list of diffs
     diff_log = list(diff_log_series.explode())
     snapshot_iters = np.linspace(0,len(diff_log), num_snapshots, dtype=int)
+
+    fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
+    G_temp = copy.deepcopy(G_master)
 
 
     # Define safety color map
@@ -254,9 +254,11 @@ def plot_snapshots(
             diff_type = diff_data.get("type")
             edge = diff_data.get("edge")
             if diff_type == "fixed":
-                graph_util.reallocate_edge(G_temp, edge)
+                graph_util.set_edge_attribute(G_temp, edge, "reallocatable", False)
+
             elif diff_type == "realloc":
-                graph_util.set_edge_attribute(G_temp, "reallocatable", False)
+                graph_util.reallocate_edge(G_temp, edge)
+
 
         # Choose coloring scheme
         if show_classification:
@@ -352,40 +354,69 @@ def plot_colored_polygons(
     annotate=True,
 ):
     """Plot colored polygons, optionally overlaying an OSMnx graph."""
+    
+    # CRS check: if graph provided, match CRS
     if G is not None:
         gdf = gdf.to_crs(G.graph["crs"])
-    fig, ax = plt.subplots(figsize=figsize)
-    gdf.plot(ax=ax, color=gdf["color"], alpha=alpha, edgecolor=edgecolor, linewidth=linewidth)
 
-    # Overlay road network if provided
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # --- Base layer: polygons ---
+    gdf.plot(
+        ax=ax,
+        color=gdf["color"],
+        alpha=alpha,
+        edgecolor=edgecolor,
+        linewidth=linewidth,
+    )
+
+    # --- Optional layer: OSMnx graph ---
     if G is not None:
         ox.plot_graph(
             G,
             ax=ax,
             node_size=0,
             edge_color="black",
+            edge_linewidth=0.6,
             bgcolor="white",
             show=False,
             close=False,
         )
 
-    # Annotate polygon names
+    # --- Optional annotation ---
     if annotate and "name" in gdf.columns:
         for _, row in gdf.iterrows():
-            if not row.geometry.is_empty:
-                centroid = row.geometry.centroid
-                ax.text(
-                    centroid.x,
-                    centroid.y,
-                    row["name"],
-                    fontsize=6,
-                    ha="center",
-                    va="center",
-                    color="black",
-                )
+            centroid = row.geometry.centroid
+            ax.text(
+                centroid.x,
+                centroid.y,
+                row["name"],
+                fontsize=6,
+                ha="center",
+                va="center",
+                color="black",
+            )
 
     if title:
         ax.set_title(title, fontsize=14)
+
     ax.set_axis_off()
     plt.tight_layout()
     plt.show()
+
+
+
+def plot_gdf_and_overlay(gdf, polygons_title, G=None, cmap_name="tab20", annotate=False):
+    """
+    Plot polygons with distinct colors, optionally overlaying an OSMnx graph.
+    """
+    gdf_colored = assign_adjacent_colors(gdf, cmap_name=cmap_name)
+
+    plot_colored_polygons(
+        gdf_colored,
+        G=G,
+        annotate=annotate,
+        title=polygons_title,
+    )
+
+    return gdf_colored

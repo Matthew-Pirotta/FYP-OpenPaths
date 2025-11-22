@@ -80,7 +80,6 @@ def network_evaluation(G:MultiDiGraph, k_sample=None) -> dict:
     return results
 
 def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDiGraph, G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
-
     reallocatable_edges = set(G_realloc.edges(keys=True))
 
     if k_sample is not None:
@@ -88,10 +87,8 @@ def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDi
 
     edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="length", normalized=True, k=k_sample, seed=seed)
 
-
     reallocatable_edges_between_cent = {k: v for k, v in edges_between_cent.items() if k in reallocatable_edges}
     #Some sort of intersection on the edge_between centrality
-
 
     #print(f"edges_between_cent: {edges_between_cent}")
     #print(f"reallocatable_edges:  {reallocatable_edges}")
