@@ -4,6 +4,8 @@ import concurrent.futures
 import osmnx as ox
 import pandas as pd
 import inspect
+from tqdm.notebook import tqdm
+
 
 from . import heuristic
 
@@ -62,17 +64,30 @@ def run_locality_task(args):
 
 def run_global(G_master, subgraphs, heuristic_func, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
     """Run heuristic on all subgraphs in parallel."""
-    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, EVALUATION_MOD) for name, G_sub_master in subgraphs.items()]
+    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, EVALUATION_MOD)
+             for name, G_sub_master in subgraphs.items()]
     results = []
 
-    if parallel:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor: 
-            for locality_results in executor.map(run_locality_task, tasks):
-                results.extend(locality_results)
-    else:
-        for task in tasks:
+    if not parallel:
+        for task in tqdm(tasks, desc="Processing localities", unit="loc"):
             locality_results = run_locality_task(task)
             results.extend(locality_results)
+        return pd.DataFrame(results)
+
+
+    if parallel:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(run_locality_task, task): task[0] for task in tasks}
+
+            with tqdm(total=len(futures), desc="Localities", unit="loc") as pbar:
+                for future in concurrent.futures.as_completed(futures):
+                    locality_name = futures[future]
+                    try:
+                        locality_results = future.result()
+                        results.extend(locality_results)
+                    except Exception as e:
+                        print(f"❌ Locality {locality_name} failed: {e}")
+                    pbar.update(1)
 
     df_results = pd.DataFrame(results)
     return df_results
