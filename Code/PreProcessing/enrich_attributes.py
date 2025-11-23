@@ -6,6 +6,9 @@ import networkx as nx
 import numpy as np
 from constants import SafetyClass
 
+from collections import Counter
+
+
 safety_to_risk_factor_map = {
     SafetyClass.VERY_SAFE: 0.5, 
     SafetyClass.SAFE: 1,
@@ -99,7 +102,7 @@ def load_and_clean_localities(G) -> tuple[GeoDataFrame, GeoDataFrame]:
 
 
 
-def tag_reallocatable_edges(G:MultiDiGraph):
+"""def tag_reallocatable_edges(G:MultiDiGraph):
     # mark bridges as not reallocatable
     bridges = set(nx.bridges(G.to_undirected()))
     for u, v, k, d in G.edges(keys=True, data=True):
@@ -111,11 +114,52 @@ def tag_reallocatable_edges(G:MultiDiGraph):
             d["reallocatable"] = False
 
         #Can only reallocate from where its bikeable (i.e not tunnels or highways)
-        elif d.get("bike_allowed") == False:
+        elif d.get("bike_allowed", True) == False:
             d["reallocatable"] = False
+
+
+        else:
+            d["reallocatable"] = True"""
+
+def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
+    """
+    Mark edges as reallocatable and return a Counter with how many edges hit each rule.
+    Set verbose=True to print a short summary.
+    """
+    counters = Counter()
+    # mark bridges as not reallocatable
+    bridges = set(nx.bridges(G.to_undirected()))
+    for u, v, k, d in G.edges(keys=True, data=True):
+        # default to False until proven otherwise (defensive)
+        if (u, v) in bridges or (v, u) in bridges:
+            d["reallocatable"] = False
+            counters["bridge"] += 1
+
+        # Can only reallocate from car lanes
+        elif d.get("car_allowed", False) == False:
+            d["reallocatable"] = False
+            counters["no_car_allowed"] += 1
+        
+        elif d.get("car_lanes", 0) <= 0:
+            d["reallocatable"] = False
+            counters["no_car_lanes"] += 1
+
+        # Can only reallocate where biking is allowed (i.e. not tunnels/highways)
+        elif d.get("bike_allowed", True) == False:
+            d["reallocatable"] = False
+            counters["no_bike_allowed"] += 1
 
         else:
             d["reallocatable"] = True
+            counters["reallocatable"] += 1
+
+        counters["total"] += 1
+
+    if verbose:
+        print("Reallocatability summary:", counters.most_common())
+
+    return counters
+
 
 
 

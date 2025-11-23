@@ -126,6 +126,7 @@ def collapse_lanes_list(G):
     pass
 #endregion
 
+#TODO need to do a better job, example car_allowed and bike_allowed
 def standardise_edge_atr(G):
     for u, v, _, d in G.edges(keys=True, data=True):
 

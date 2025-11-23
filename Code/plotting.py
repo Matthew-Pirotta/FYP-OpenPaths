@@ -46,6 +46,36 @@ def plot_road_classification(G_bike):
     plt.show()
 
 
+def plot_bool_atr(G_bike, attribute):
+    allocability_to_colour = {
+    True: "green",
+    False: "red",
+    }
+
+    edge_colors = []
+    for _, _, data in G_bike.edges(data=True):
+        color = allocability_to_colour.get(data.get(attribute), "gray")
+        edge_colors.append(color)
+
+    edge_linewidth = [
+        1 if d.get(attribute, False) else 0.5
+        for _, _, d in G_bike.edges(data=True)
+    ]
+
+
+
+    fig, ax = ox.plot_graph(G_bike, node_size=0, edge_color=edge_colors, edge_linewidth=edge_linewidth, show=False, close=False)
+    # Create legend patches#
+    legend_elements = [
+        mpatches.Patch(color=allocability_to_colour[True], label="True"),
+        mpatches.Patch(color=allocability_to_colour[False], label="False"),
+    ]
+    ax.legend(handles=legend_elements, title=f"is {attribute}")
+    plt.tight_layout()
+    plt.show()
+
+
+
 def color_hist(ax, values, bins, cmap, norm, title, xlabel, ylabel="Frequency", log=False):
     """Utility to draw a colored histogram with consistent style."""
     n, bins, patches = ax.hist(values, bins=bins, color='grey', alpha=0.7,
@@ -187,8 +217,8 @@ def plot_evaluation(df):
     fig.tight_layout()
     plt.show()
 
-def plot_network_evolution2(G_master, diffs_by_iter):
-    diffs_by_iter = list(diffs_by_iter.explode())
+def plot_network_evolution2(G_master, diff_log_series: pd.Series):
+    diff_log = list(diff_log_series.explode())
 
     fig, ax = ox.plot_graph(
         G_master,
@@ -200,11 +230,13 @@ def plot_network_evolution2(G_master, diffs_by_iter):
     )
 
     cmap = plt.cm.plasma
-    norm = plt.Normalize(0, len(diffs_by_iter))
+    norm = plt.Normalize(0, len(diff_log))
 
-    for i, (u, v, k) in enumerate(diffs_by_iter):
+    for i, diff_data in enumerate(diff_log):
         color = cmap(norm(i))
-        if G_master.has_edge(u, v, k):
+        diff_type = diff_data.get("type")
+        u,v,k = diff_data.get("edge")
+        if G_master.has_edge(u, v, k) and diff_type == "realloc":
             data = G_master[u][v][k]
             geom = data.get("geometry")
             if geom is None:
