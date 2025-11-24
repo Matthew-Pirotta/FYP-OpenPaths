@@ -62,6 +62,7 @@ reallocatable: bool (False if bridge or car not allowed)
 
 constants:
 grade: float
+width: float
 region: str
 locality: str
 -----

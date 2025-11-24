@@ -140,6 +140,7 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
             d["reallocatable"] = False
             counters["no_car_allowed"] += 1
         
+        #TODO can remove
         elif d.get("car_lanes", 0) <= 0:
             d["reallocatable"] = False
             counters["no_car_lanes"] += 1

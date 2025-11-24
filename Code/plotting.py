@@ -12,10 +12,16 @@ import osmnx as ox
 import pandas as pd
 import libpysal
 from pandas import Series
+from shapely import LineString
+from matplotlib.lines import Line2D
+from matplotlib.patches import FancyArrow, Patch
+
 
 
 import graph_util
 from constants import SafetyClass
+
+#TODO Clean the living hell out of this abomination of a script
 
 def plot_road_classification(G_bike):
     safety_to_color_map = {
@@ -72,6 +78,132 @@ def plot_bool_atr(G_bike, attribute):
     ]
     ax.legend(handles=legend_elements, title=f"is {attribute}")
     plt.tight_layout()
+    plt.show()
+
+def plot_directionality(G):
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Prepare containers
+    car_twoway = []
+    car_oneway = []
+    bike_twoway = []
+    bike_oneway = []
+
+    # Find forward/backward edges
+    car_edges = {(u, v) for u, v, k, d in G.edges(keys=True, data=True) if d.get("car_allowed")}
+    bike_edges = {(u, v) for u, v, k, d in G.edges(keys=True, data=True) if d.get("bike_allowed")}
+
+    # -------- CAR TWO-WAY --------
+    for u, v in car_edges:
+        if (v, u) in car_edges:
+            car_twoway.append((u, v))
+        else:
+            car_oneway.append((u, v))
+
+    # -------- BIKE TWO-WAY --------
+    for u, v in bike_edges:
+        if (v, u) in bike_edges:
+            bike_twoway.append((u, v))
+        else:
+            bike_oneway.append((u, v))
+
+    def draw_arrowhead_mid(ax, geom, color="black", size=12):
+        """
+        Draw ONLY an arrowhead marker in the middle of a LineString.
+        """
+        xs, ys = geom.xy
+
+        # Find midpoint index
+        mid_idx = len(xs) // 2
+
+        # Midpoint coordinates
+        x_mid, y_mid = xs[mid_idx], ys[mid_idx]
+
+        # A second point for direction (slightly before midpoint)
+        if mid_idx == 0:
+            x_prev, y_prev = xs[1], ys[1]
+        else:
+            x_prev, y_prev = xs[mid_idx - 1], ys[mid_idx - 1]
+
+        ax.annotate(
+            "",
+            xy=(x_mid, y_mid),
+            xytext=(x_prev, y_prev),
+            arrowprops=dict(
+                arrowstyle="-|>",   # head only
+                color=color,        # black arrowhead
+                mutation_scale=size,
+                lw=0.0              # no tail line
+            )
+        )
+
+    def draw_edges(edge_list, color, linewidth=1, arrows=False):
+        for u, v in edge_list:
+            data = G.get_edge_data(u, v)
+            if data is None:
+                continue
+            d = data[list(data.keys())[0]]
+
+            geom = d.get("geometry")
+            if geom is None:
+                geom = LineString([
+                    (G.nodes[u]["x"], G.nodes[u]["y"]),
+                    (G.nodes[v]["x"], G.nodes[v]["y"])
+                ])
+
+            xs, ys = geom.xy
+
+            # Draw the line normally
+            ax.plot(xs, ys, color=color, linewidth=linewidth)
+
+            if arrows:
+                draw_arrowhead_mid(ax, geom, color="black", size=12)
+
+    def add_directionality_legend(ax):
+
+        car_line = Line2D([0], [0], color="red", lw=2, label="Car - two-way")
+        car_one  = Line2D([0], [0], color="red", lw=2, label="Car - one-way")
+
+        bike_line = Line2D([0], [0], color="blue", lw=2, label="Bike - two-way")
+        bike_one  = Line2D([0], [0], color="blue", lw=2, label="Bike - one-way")
+
+        # Arrowhead marker only (triangle-like arrowhead)
+        arrow_head = Line2D(
+            [0], [0],
+            color="black",
+            marker="4",             # arrowhead marker
+            markersize=14,
+            linestyle="None",
+            label="Direction"
+        )
+
+        handles = [
+            car_line,
+            car_one,
+            bike_line,
+            bike_one,
+            arrow_head
+        ]
+
+        ax.legend(
+            handles=handles,
+            title="Road Directionality",
+            loc="upper left",
+            fontsize=8
+        )
+
+
+    # ---- DRAW EVERYTHING ----
+    draw_edges(car_twoway, "red", linewidth=1.2)
+    draw_edges(car_oneway, "red", linewidth=1.0, arrows=True)
+
+    draw_edges(bike_twoway, "blue", linewidth=1.2)
+    draw_edges(bike_oneway, "blue", linewidth=1.0, arrows=True)
+
+    add_directionality_legend(ax)
+
+    ax.set_title("Directionality of Car (Red) and Bike (Blue) Network")
+    ax.set_axis_off()
     plt.show()
 
 

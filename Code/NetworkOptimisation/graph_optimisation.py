@@ -46,7 +46,8 @@ def run_locality_task(args):
             diff_log.append({"type":"fixed", "edge": edge_to_reallocate})
 
         if i % EVALUATION_MOD == 0:
-            evaluation = heuristic.network_evaluation(G_working, k_sample=k_sample)
+            #TODO this should be the pure protected network
+            evaluation = heuristic.network_evaluation(G_bikeable, k_sample=k_sample)
             evaluation["locality"] = name
             evaluation["iteration"] = i
             evaluation["diff_log"] = list(diff_log) # store a copy so later clears don't mutate stored evaluations
