@@ -196,6 +196,7 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         if changed == 0:
             break
 
+    """    
     #TODO idk why man :Sob:
     print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
     full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
@@ -207,7 +208,7 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
                 print(f"NOde{node} elevation is problematic :/")
                 data["elevation"] = float(median_elevation)
 
-    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
+    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))"""
 
     #Recalculate grades and clamp to reasonable values
     G = ox.elevation.add_edge_grades(G, add_absolute=True)

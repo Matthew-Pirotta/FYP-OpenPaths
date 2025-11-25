@@ -20,7 +20,7 @@ def run_locality_task(args):
     diff_log = []
     sig = inspect.signature(heuristic_func)
     #TODO evaluate before first reallocation
-    for i in range(n_iterations):
+    for i in tqdm(range(n_iterations), desc=f"Iterations ({name})", unit="iter", leave = False):
         G_drive = graph_util.make_drive_subgraph(G_working)
         G_bikeable = graph_util.make_bikeable_subgraph(G_working)
         G_realloc = graph_util.make_reallocatable_subgraph(G_bikeable)
@@ -63,8 +63,12 @@ def run_locality_task(args):
 
     return evaluations
 
-def run_global(G_master, subgraphs, heuristic_func, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
+def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
     """Run heuristic on all subgraphs in parallel."""
+    
+    if not subgraphs:
+        subgraphs = {"MASTER": G_master}
+
     tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, EVALUATION_MOD)
              for name, G_sub_master in subgraphs.items()]
     results = []

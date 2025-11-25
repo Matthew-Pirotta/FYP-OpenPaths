@@ -39,6 +39,7 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
 #endregion
 
 def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
+    return True
     """Updates the reallocatable attribute in place"""
     # Work on a shallow copy (just edge structure)
     u,v,k = edge_id
@@ -63,7 +64,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.VERY_SAFE):
     d = G[u][v][k] 
     d["car_lanes"] = max(d["car_lanes"]-1,0)
     if d["car_lanes"] == 0:
-        d["car_allowed"] = False
+        #d["car_allowed"] = False
         d["reallocatable"] = False
 
     #removing one car lane adds 1 bike lane in each direction

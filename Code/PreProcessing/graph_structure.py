@@ -47,6 +47,7 @@ def simplify_multidigraph_in_place(G):
             agg[attr] = any(d.get(attr, False) for d in edges)
 
         # pick most bike-friendly safety class if available
+        #Categorical 
         #TODO Nuh
         for attr in categorical_attrs:
             vals = [d.get(attr) for d in edges if d.get(attr) not in (None, "", np.nan)]

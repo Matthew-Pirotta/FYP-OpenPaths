@@ -157,7 +157,7 @@ def plot_directionality(G):
             ax.plot(xs, ys, color=color, linewidth=linewidth)
 
             if arrows:
-                draw_arrowhead_mid(ax, geom, color="black", size=12)
+                draw_arrowhead_mid(ax, geom, color="black", size=7)
 
     def add_directionality_legend(ax):
 

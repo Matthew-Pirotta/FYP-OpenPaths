@@ -69,13 +69,12 @@ def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
     return G_bike
 
 #TODO move to clean_input data?
-def load_and_clean_localities(G) -> tuple[GeoDataFrame, GeoDataFrame]:
+def load_and_clean_localities(G, place_name) -> tuple[GeoDataFrame, GeoDataFrame]:
     """
     Fetch and clean administrative boundaries for both level 7 (regions) and level 8 (localities) in Malta. Returns a unified GeoDataFrame projected to the graph CRS.
     """
-    #TODO malta is hardcoded
     gdf_localities = ox.features.features_from_place(
-        "Malta (Island)",
+        place_name,
         tags={"boundary": "administrative", "admin_level": ["7", "8"]}
     )
 
@@ -128,7 +127,8 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
     """
     counters = Counter()
     # mark bridges as not reallocatable
-    bridges = set(nx.bridges(G.to_undirected()))
+    #bridges = set(nx.bridges(G.to_undirected()))
+    bridges = {}
     for u, v, k, d in G.edges(keys=True, data=True):
         # default to False until proven otherwise (defensive)
         if (u, v) in bridges or (v, u) in bridges:
