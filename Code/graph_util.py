@@ -23,7 +23,7 @@ def make_reallocatable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("reallocatable") == True)
 
 def make_protected_subgraph(G:MultiDiGraph)-> MultiDiGraph:
-    return _filter_edges(G, lambda d: d.get("safety") in ["safe", "very_safe"])
+    return _filter_edges(G, lambda d: d.get("safety") in [SafetyClass.SAFE, SafetyClass.VERY_SAFE])
 
 def make_region_subgraph(G:MultiDiGraph, region)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("region") == region)
@@ -58,11 +58,11 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     # Choose strong or weak connectivity depending on road model
     return stays_connected
 
-#TODO currently can reallocate from the main road, big no no, need to set a more restrictive subgraph view
-def reallocate_edge(G:MultiDiGraph, edge_id:tuple):
+def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     """Convert an edge into a fietsstraat (bike-priority street)."""
     u, v, k = edge_id
     d = G[u][v][k]
+    reallocated = []
 
     # 1. Cars still allowed but as guests
     d["car_allowed"] = True
@@ -78,25 +78,51 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple):
     d["safety"] = SafetyClass.SAFE
     #d["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
 
-    #5.
+    #5.maxspeed
     d["maxspeed"] = FIETSSRAAT_MAX_SPEED
 
     # 6. After conversion, edge should not be converted again
     d["reallocatable"] = False
+
+    reallocated.append((u, v, k))
+
 
     
     # 7. Directionality preserved:
     # If reverse exists, classify it too (but do NOT create new synthetic edges)
     if G.has_edge(v, u):
         #TODO this 0 indexing could be a problem depending on if i keep the multi digraph
-        d_rev = G[v][u][0]
+        rev_key = next(iter(G[v][u].keys()))
+        d_rev = G[v][u][rev_key]
         d_rev["car_allowed"] = True
         d_rev["bike_allowed"] = True
         d_rev["infra_type"] = "fietsstraat"
         d_rev["safety"] = SafetyClass.SAFE
         d_rev["maxspeed"] = FIETSSRAAT_MAX_SPEED
         #d_rev["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
-        G[v][u][0]["reallocatable"] = False
+        d_rev["reallocatable"] = False
+        reallocated.append((v, u, rev_key))
+
+    else: #create edge for cyclists if it doesn't exist
+        attrs = d.copy()
+        attrs["bike_allowed"] = True
+        attrs["car_allowed"] = False  # no car traffic on this synthetic link
+        attrs["bike_lanes"] = 0
+        attrs["car_lanes"] = 0
+        attrs["geometry"] = d["geometry"].reverse() #road shape
+        attrs["grade"] = -d["grade"]
+        attrs["reallocatable"] = False
+        attrs["infra_type"] = "fietsstraat"
+        attrs["safety"] = SafetyClass.SAFE
+        attrs["maxspeed"] = FIETSSRAAT_MAX_SPEED
+        G.add_edge(v, u, **attrs)
+
+        #If adding a new first edge then the key must be 0 
+        reallocated.append((v, u, 0))
+    
+    return reallocated
+
+
 
 def summarise_road_type_stats(G:MultiDiGraph):
     highway_counts = Counter()

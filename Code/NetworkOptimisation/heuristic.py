@@ -9,6 +9,12 @@ import numpy as np
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
 
+def largest_by_length(G):
+    #NOTE strongly connected true since roads cycle infrastructure is directional
+    components = (G.subgraph(c).copy() for c in nx.strongly_connected_components(G))
+    return max(components, key=lambda H: sum(d.get("length",0) for _,_,d in H.edges(data=True)))
+
+
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component
 def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
     num_components = nx.number_strongly_connected_components(G)
@@ -75,22 +81,17 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
     edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
     mean_edge_between_cent = float(np.mean(list(edge_between_cent.values())))
 
-    # node betweenness centrality - measures how frequently a node lies on the shortest paths between all node pair
-    node_between_cent = nx.betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
-    mean_node_between_cent = float(np.mean(list(node_between_cent.values())))
-
     #closeness_centrality - how close all other nodes are
-    #TODO
-    #node_close_cent = nx.closeness_centrality(G_lcc, distance="length")
-    #mean_node_close_cent = float(np.mean(list(node_close_cent.values())))
+    node_close_cent = nx.closeness_centrality(G_lcc, distance="length")
+    mean_node_close_cent = float(np.mean(list(node_close_cent.values())))
 
     degrees = [d for _, d in G_lcc.degree()]
     mean_degree = float(np.mean(degrees))
         
     return {
         "mean_edge_betweenness": mean_edge_between_cent,
-        "mean_node_betweenness": mean_node_between_cent,
-        "mean_node_closeness": 1,
+        "mean_node_betweenness": 1,
+        "mean_node_closeness": mean_node_close_cent,
         "mean_degree": mean_degree,
     }
 
@@ -113,7 +114,7 @@ def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=
             "mean_directness": 0.0,
         }
 
-    Gp_lcc = ox.truncate.largest_component(G_protected, strongly=True) #NOTE strongly connected true since roads cycle infrastructure is directional
+    Gp_lcc = largest_by_length(G_protected)
 
     connectedness = calc_connectedness(G_protected, Gp_lcc)
     centrality  = calc_centrality(Gp_lcc, k_sample=k_sample)

@@ -311,8 +311,9 @@ def plot_grades(G):
     cbar.set_label("Edge Grade (%)")
     plt.show()
 
+#TODO i could prob make this neater by just doing df.plot()
 def plot_evaluation(df):
-    fig, axs = plt.subplots(2,2, figsize=(12, 8))
+    fig, axs = plt.subplots(3,2, figsize=(12, 8))
 
     # --- Plot connectedness ---
     axs[0,0].plot(df["iteration"], df["num_components"], label="Number of Components", color="red")
@@ -333,22 +334,28 @@ def plot_evaluation(df):
 
 
     # --- Plot centrality metrics ---
-   
-    cols = ["mean_edge_betweenness", "mean_node_betweenness", ] #"mean_node_closeness"
-    df_plot = df.sort_values("iteration")  # ensure correct order
-    df_plot.plot(x="iteration", y=cols, ax=axs[1,0], linewidth=2)
+    axs[1,0].plot(df["iteration"], df["mean_edge_betweenness"], color = "orange")
     axs[1,0].set_xlabel("Iteration")
-    axs[1,0].set_ylabel("Average Centrality Value")
-    axs[1,0].set_title("Network Centrality Metrics During Simulation")
+    axs[1,0].set_ylabel("Average Edge Betweenness")
+    axs[1,0].set_title("Network Edge Betweenness Metrics During Simulation")
     axs[1,0].grid(True, alpha=0.3)
 
-    #-- Plot Directness ---
-    axs[1,1].plot(df["iteration"], df["mean_directness"], label="Directness", color="purple")
+
+    #-- Plot LCC growth ---
+    axs[1,1].plot(df["iteration"], df["mean_node_closeness"], label="node_closeness", color="green")
     axs[1,1].set_xlabel("Iteration")
-    axs[1,1].set_ylabel("Average Directness Value")
-    axs[1,1].set_title("Directness Over Time")
+    axs[1,1].set_ylabel("Average Node closeness")
+    axs[1,1].set_title("Network Node Closeness Metrics During Simulation")
     axs[1,1].legend()
     axs[1,1].grid(True, alpha=0.3)
+
+    #-- Plot Directness ---
+    axs[2,0].plot(df["iteration"], df["mean_directness"], label="Directness", color="purple")
+    axs[2,0].set_xlabel("Iteration")
+    axs[2,0].set_ylabel("Average Directness Value")
+    axs[2,0].set_title("Directness Over Time")
+    axs[2,0].legend()
+    axs[2,0].grid(True, alpha=0.3)
 
     fig.tight_layout()
     plt.show()
@@ -434,7 +441,7 @@ def plot_snapshots(
         else:
             edge_colors = []
             for _, _, d in G_temp.edges(data=True):
-                if d.get("safety") == SafetyClass.VERY_SAFE:
+                if d.get("safety") in {SafetyClass.VERY_SAFE, SafetyClass.SAFE}:
                     edge_colors.append("green")
                 elif d.get("reallocatable") == False:
                     edge_colors.append("red")
@@ -442,7 +449,7 @@ def plot_snapshots(
                     edge_colors.append("gray")
 
         edge_linewidth = [
-            1.2 if d.get("safety") == SafetyClass.VERY_SAFE else 0.5
+            1.2 if d.get("safety") in {SafetyClass.VERY_SAFE, SafetyClass.SAFE} else 0.5
             for _, _, d in G_temp.edges(data=True)
         ]
 

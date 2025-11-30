@@ -62,7 +62,7 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         elif highway in {"primary", "secondary", "trunk", "tertiary"}:
             classification = SafetyClass.DANGEROUS
 
-        elif highway == "track":
+        elif highway in {"track", "service", "non_motorised"}:
             classification = SafetyClass.MODERATE
 
         else:

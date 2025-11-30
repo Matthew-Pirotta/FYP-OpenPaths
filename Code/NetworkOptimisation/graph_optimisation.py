@@ -54,9 +54,10 @@ def run_locality_task(args):
         can_reallocate = graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate)
 
         if can_reallocate:
-            diff_log.append({"type":"realloc", "edge":edge_to_reallocate})
+            reallocated_edges = graph_util.reallocate_edge(G_working, edge_to_reallocate)
+            for reallocated_edge in reallocated_edges:
+                diff_log.append({"type":"realloc", "edge":reallocated_edge})
             #print(f"edge before: {G_working[u][v][k]}")
-            graph_util.reallocate_edge(G_working, edge_to_reallocate)
             #print(f"edge after: {G_working[u][v][k]}" )
         else:
             u,v,k = edge_to_reallocate
@@ -64,7 +65,6 @@ def run_locality_task(args):
             diff_log.append({"type":"fixed", "edge": edge_to_reallocate})
 
         if i % EVALUATION_MOD == 0:
-            G_protected = graph_util.make_protected_subgraph(G_working)
             append_evaluation(G_working, iteration=i, clear_diff=True)
 
     # final evaluation on the final working graph
