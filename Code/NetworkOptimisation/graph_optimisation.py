@@ -1,3 +1,4 @@
+from networkx import MultiDiGraph
 import graph_util as graph_util
 import copy
 import concurrent.futures
@@ -21,8 +22,11 @@ def run_locality_task(args):
     sig = inspect.signature(heuristic_func)
     
     # helper to build & append evaluation (copies diff_log when provided)
-    def append_evaluation(graph_for_eval, iteration, clear_diff=False):
-        ev = heuristic.network_evaluation(graph_for_eval, k_sample=k_sample)
+    def append_evaluation(G_master:MultiDiGraph, iteration, clear_diff=False):
+        G_protected = graph_util.make_protected_subgraph(G_master)
+        G_drive = graph_util.make_drive_subgraph(G_master)
+
+        ev = heuristic.network_evaluation(G_protected, G_drive, k_sample=k_sample)
         ev["locality"] = name
         ev["iteration"] = iteration
         ev["diff_log"] = list(diff_log)  # store snapshot
@@ -32,14 +36,11 @@ def run_locality_task(args):
 
 
     # initial evaluation on the original state (before any reallocations)
-    G_protected = graph_util.make_protected_subgraph(G_working)
-    append_evaluation(G_protected, iteration=0)
+    append_evaluation(G_working, iteration=0)
 
-    for i in tqdm(range(n_iterations), desc=f"Iterations ({name})", unit="iter", leave = False):
+    for i in tqdm(range(1, n_iterations+1), desc=f"Iterations ({name})", unit="iter", leave = False):
         G_drive = graph_util.make_drive_subgraph(G_working)
         G_bikeable = graph_util.make_bikeable_subgraph(G_working)
-        G_protected = graph_util.make_protected_subgraph(G_working)
-
         G_realloc = graph_util.make_reallocatable_subgraph(G_bikeable)
         #print(f"G_realloc.number_of_edges(): {G_realloc.number_of_edges()}")
         if G_realloc.number_of_edges() == 0:
@@ -63,7 +64,8 @@ def run_locality_task(args):
             diff_log.append({"type":"fixed", "edge": edge_to_reallocate})
 
         if i % EVALUATION_MOD == 0:
-            append_evaluation(G_protected, iteration=i, clear_diff=True)
+            G_protected = graph_util.make_protected_subgraph(G_working)
+            append_evaluation(G_working, iteration=i, clear_diff=True)
 
     # final evaluation on the final working graph
     append_evaluation(G_working, iteration=n_iterations, clear_diff=False)

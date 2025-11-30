@@ -30,7 +30,6 @@ def plot_road_classification(G_bike):
     SafetyClass.MODERATE: "yellow",
     SafetyClass.CAUTION: "orange",
     SafetyClass.DANGEROUS: "red",
-    SafetyClass.UNSUITABLE: "brown",
     SafetyClass.UNCLASSIFIED: "gray"
     }
 
@@ -343,8 +342,13 @@ def plot_evaluation(df):
     axs[1,0].set_title("Network Centrality Metrics During Simulation")
     axs[1,0].grid(True, alpha=0.3)
 
-    # hide unused bottom-right subplot
-    axs[1,1].axis("off")
+    #-- Plot Directness ---
+    axs[1,1].plot(df["iteration"], df["mean_directness"], label="Directness", color="purple")
+    axs[1,1].set_xlabel("Iteration")
+    axs[1,1].set_ylabel("Average Directness Value")
+    axs[1,1].set_title("Directness Over Time")
+    axs[1,1].legend()
+    axs[1,1].grid(True, alpha=0.3)
 
     fig.tight_layout()
     plt.show()

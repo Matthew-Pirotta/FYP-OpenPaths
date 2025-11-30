@@ -20,23 +20,47 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
     }
 
 
-"""def calc_directness(Gb_lcc:MultiDiGraph, G_drive:MultiDiGraph, k = SAMPLE_K, seed=SEED):
-    #TODO update when I actually have OD matrix data
-    rng = random.Random(seed)
+def calc_directness(Gb_lcc:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None, seed=SEED):
+    bike_nodes = list(Gb_lcc.nodes())
+    drive_nodes = set(G_drive.nodes()) 
 
-    nodes_b = list(Gb_lcc.nodes())
-    if len(nodes_b) < 2:
-        raise ValueError("Bike LCC has fewer than 2 nodes.")
-    K_eff = min(k, len(nodes_b) * 5)  # keep reasonable number of pairs
-    rng.seed(seed)
-    ods = []
-    while len(ods) < K_eff:
-        o = rng.choice(nodes_b)
-        d = rng.choice(nodes_b)
-        if o != d:
-            ods.append((o, d))
-            
-    pass"""
+    # Choose sampled origins/destinations
+    if k_sample is None:
+        origins = bike_nodes
+        dests = bike_nodes
+    else:
+        rng = random.Random(seed)
+        k_eff = min(k_sample, len(bike_nodes))
+        origins = rng.sample(bike_nodes, k_eff)
+        dests = rng.sample(bike_nodes, k_eff)
+
+    ratios = []
+    for o in origins:
+        for d in dests:
+            if o == d:
+                continue
+
+            # Ensure the drive network also includes the pair
+            if o not in drive_nodes or d not in drive_nodes:
+                continue
+
+            try:
+                L_bike = nx.shortest_path_length(Gb_lcc, source=o, target=d, weight="length")
+                L_drive = nx.shortest_path_length(G_drive, source=o, target=d, weight="length")
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
+                continue
+
+            if L_drive > 0:
+                ratios.append(L_bike / L_drive)
+
+    if len(ratios) == 0:
+        return {
+            "mean_directness": 0,
+        }
+
+    return {
+        "mean_directness": float(np.mean(ratios)),
+    }
 
 def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
     """Calculate comprehensive centrality metrics for cycling network assessment"""
@@ -71,12 +95,30 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
     }
 
 
-def network_evaluation(G:MultiDiGraph, k_sample=None) -> dict:
-    G_lcc = ox.truncate.largest_component(G, strongly=True) #NOTE strongly connected true since roads cycle infrastructure is directional
+def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None) -> dict:
+    # Handle empty graph case
+    if G_protected.number_of_nodes() == 0 or G_protected.number_of_edges() == 0:
+        return {
+            # calc_connectedness
+            "num_components": 0,
+            "lcc_length": 0.0,
 
-    connectedness = calc_connectedness(G, G_lcc)
-    centrality  = calc_centrality(G_lcc, k_sample=k_sample)
-    results = {**connectedness, **centrality}
+            # calc_centrality
+            "mean_edge_betweenness": 0.0,
+            "mean_node_betweenness": 0.0,
+            "mean_node_closeness": 0.0,
+            "mean_degree": 0.0,
+
+            # calc_directness
+            "mean_directness": 0.0,
+        }
+
+    Gp_lcc = ox.truncate.largest_component(G_protected, strongly=True) #NOTE strongly connected true since roads cycle infrastructure is directional
+
+    connectedness = calc_connectedness(G_protected, Gp_lcc)
+    centrality  = calc_centrality(Gp_lcc, k_sample=k_sample)
+    directness = calc_directness(G_protected, G_drive, k_sample=k_sample)
+    results = {**connectedness, **centrality, **directness}
     return results
 
 def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDiGraph, G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
