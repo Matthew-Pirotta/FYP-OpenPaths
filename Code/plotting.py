@@ -349,9 +349,7 @@ def plot_evaluation(df):
     fig.tight_layout()
     plt.show()
 
-def plot_network_evolution2(G_master, diff_log_series: pd.Series):
-    diff_log = list(diff_log_series.explode())
-
+def plot_network_evolution2(G_master, diff_log:list):
     fig, ax = ox.plot_graph(
         G_master,
         node_size=0,
@@ -388,13 +386,12 @@ def plot_network_evolution2(G_master, diff_log_series: pd.Series):
 
 def plot_snapshots(
     G_master:MultiDiGraph,
-    diff_log_series: pd.Series,
+    diff_log:list,
     num_snapshots = 4,
     show_classification=True
 ):
     """Plot network snapshots at given iterations with optional safety classification coloring."""
     # Flatten nested list of diffs
-    diff_log = list(diff_log_series.explode())
     snapshot_iters = np.linspace(0,len(diff_log), num_snapshots, dtype=int)
 
     fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))

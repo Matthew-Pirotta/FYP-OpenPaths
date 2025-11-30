@@ -34,6 +34,7 @@ def load_network(location) -> MultiDiGraph:
         nx.set_edge_attributes(G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
+        #TODO should be drive_service?
         G_drive = ox.graph_from_place(location, network_type="drive", simplify=True, retain_all=True)
         nx.set_edge_attributes(G_drive,True,"car_allowed")
         #TODO edge attributes code is being dupplicated in the __create_master graph. Also didnt set False values:
@@ -53,18 +54,17 @@ def clean_graph(G:MultiDiGraph, place_name):
     clean_input_data.standardise_edge_atr(G)
     clean_input_data.ensure_edge_geometries(G)
 
-    # ensures accurate 'length' in meters
-    G = ox.project_graph(G)           
-    G = ox.distance.add_edge_lengths(G)
+    # simplify topology (may change geometries), then recompute accurate lengths
+    # graph_structure.simplify_multidigraph_in_place(G)
 
-    graph_structure.simplify_multidigraph_in_place(G)
+    # ensures accurate 'length' in meters
+    G = ox.project_graph(G)    
+    G = ox.distance.add_edge_lengths(G)
 
     enrich_attributes.bike_safety_classification(G)
     enrich_attributes.tag_reallocatable_edges(G, verbose=True)
     gdf_regions_proj, gdf_local_proj = enrich_attributes.load_and_clean_localities(G, place_name)
     #NOTE imp to project before assigning regions due to using x and y co-ordinates
     G = enrich_attributes.assign_edge_regions(G, gdf_regions_proj, gdf_local_proj)
-
-
 
     return G, gdf_regions_proj, gdf_local_proj

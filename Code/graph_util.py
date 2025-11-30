@@ -8,6 +8,8 @@ from collections import Counter
 
 from constants import SafetyClass
 
+FIETSSRAAT_MAX_SPEED = 10
+
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("car_allowed", False))
@@ -57,47 +59,57 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     return stays_connected
 
 #TODO currently can reallocate from the main road, big no no, need to set a more restrictive subgraph view
-def reallocate_edge(G:MultiDiGraph, edge_id, new_safety=SafetyClass.VERY_SAFE):
-    """Simulate reallocating a road edge to bike use."""
-    u,v,k = edge_id
-    #NOTE Since the 'MultiGraph' has only one edge per direction, k will always be 0
-    d = G[u][v][k] 
-    d["car_lanes"] = max(d["car_lanes"]-1,0)
-    if d["car_lanes"] == 0:
-        #d["car_allowed"] = False
-        d["reallocatable"] = False
+def reallocate_edge(G:MultiDiGraph, edge_id:tuple):
+    """Convert an edge into a fietsstraat (bike-priority street)."""
+    u, v, k = edge_id
+    d = G[u][v][k]
 
-    #removing one car lane adds 1 bike lane in each direction
+    # 1. Cars still allowed but as guests
+    d["car_allowed"] = True
+    # No lane reduction: cars share space
+    
+    # 2. Bikes explicitly allowed
     d["bike_allowed"] = True
-    d["bike_lanes"] += 1
-    d["safety"] = new_safety
+    
+    # 3. Fietsstraat classification
+    d["infra_type"] = "fietsstraat"
+    
+    # 4. Set safety level appropriate to fietsstraat
+    d["safety"] = SafetyClass.SAFE
+    #d["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
 
-    # --- Reverse direction ---
+    #5.
+    d["maxspeed"] = FIETSSRAAT_MAX_SPEED
+
+    # 6. After conversion, edge should not be converted again
+    d["reallocatable"] = False
+
+    
+    # 7. Directionality preserved:
+    # If reverse exists, classify it too (but do NOT create new synthetic edges)
     if G.has_edge(v, u):
-        rev = G[v][u][0]
-        rev["bike_allowed"] = True
-        rev["bike_lanes"] = rev.get("bike_lanes") + 1
-        rev["safety"] = new_safety
-    else: #create edge if it doesn't exist
-        attrs = d.copy()
-        attrs["bike_allowed"] = True
-        attrs["bike_lanes"] = 1
-        attrs["car_allowed"] = False  # no car traffic on this synthetic link
-        attrs["car_lanes"] = 0
-        attrs["geometry"] = d["geometry"].reverse() #road shape
-        attrs["grade"] = -d["grade"]
-        attrs["reallocatable"] = False
-        G.add_edge(v, u, **attrs)
+        #TODO this 0 indexing could be a problem depending on if i keep the multi digraph
+        d_rev = G[v][u][0]
+        d_rev["car_allowed"] = True
+        d_rev["bike_allowed"] = True
+        d_rev["infra_type"] = "fietsstraat"
+        d_rev["safety"] = SafetyClass.SAFE
+        d_rev["maxspeed"] = FIETSSRAAT_MAX_SPEED
+        #d_rev["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
+        G[v][u][0]["reallocatable"] = False
 
 def summarise_road_type_stats(G:MultiDiGraph):
     highway_counts = Counter()
     bikeway_counts = Counter()
     cycleway_counts = Counter()
+    tunnel_counts = Counter()
+
 
     for u, v, data in G.edges(data=True):
         highway_counts[data.get("highway")] += 1
         bikeway_counts[data.get("bicycle")] += 1
         cycleway_counts[data.get("cycleway")] += 1
+        tunnel_counts[data.get("tunnel")] += 1
     
     print("Highway type counts:")
     for highway_type, count in highway_counts.most_common():
@@ -112,6 +124,11 @@ def summarise_road_type_stats(G:MultiDiGraph):
     print("cycleway type counts:")
     for cycleway_type, count in cycleway_counts.most_common():
         print(f"{cycleway_type}: {count}")
+    
+    print("------")
+    print("tunnel counts:")
+    for tunnel_type, count in tunnel_counts.most_common():
+        print(f"{tunnel_type}: {count}")
 
 
 def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) -> MultiDiGraph:

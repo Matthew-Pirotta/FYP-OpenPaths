@@ -3,6 +3,7 @@ import osmnx as ox
 import networkx as nx
 import numpy as np
 from constants import SafetyClass
+from . import tag_utils
 from shapely.geometry import LineString
 
 
@@ -73,54 +74,19 @@ def select_primary_label(highway_list:list[str]|str, priority_order:list) -> str
     return best_highway
 
 def collapse_road_tag_lists(G):
-    highway_priority = [          
-        "service", # Lowest priority - often just access roads
-        "residential",
-        "pedestrian"
-        "tertiary",
-        "secondary",
-        "primary",
-        "trunk",
-        "track"
-        "cycleway"         # Highest priority - dedicated cycling infrastructure
-    ]
-
-    bicycle_priority = [
-        # Lowest priority
-        'None',
-        'permissive'
-        'yes',
-        'private'
-        'designated',
-        # Highest priority
-    ]
-
-    cycleway_priority = [
-        'None',
-        'no',
-        'crossing',
-        'shared',
-        'shared_lane', # cycling along side cars
-        'lane', # lies within the roadway 
-        'track', # separated by buffer
-    ]
-
     for _, _, data in G.edges(data=True):
-        highway = data.get("highway")
-        #NOTE that some entries have a list of labels, and the safest option is taken for classification
 
-        highway = select_primary_label(highway, highway_priority)
-        data["highway"] = highway
+        data["highway"] = select_primary_label(
+            data.get("highway"), tag_utils.HIGHWAY_PRIORITY
+        )
 
-        # Defines legal access — whether bicycles may use the way.
-        bicycle = data.get("bicycle")
-        bicycle = select_primary_label(bicycle, bicycle_priority)
-        data['bicycle'] = bicycle
+        data["bicycle"] = select_primary_label(
+            data.get("bicycle"), tag_utils.BICYCLE_PRIORITY
+        )
 
-        #Describes infrastructure type — if and how a bike facility exists
-        cycleway = data.get("cycleway")
-        cycleway = select_primary_label(cycleway, cycleway_priority)
-        data["cycleway"] = cycleway
+        data["cycleway"] = select_primary_label(
+            data.get("cycleway"), tag_utils.CYCLEWAY_PRIORITY
+        )
 
 def collapse_lanes_list(G):
     pass

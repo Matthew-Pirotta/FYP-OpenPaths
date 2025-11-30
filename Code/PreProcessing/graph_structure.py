@@ -3,7 +3,8 @@ import osmnx as ox
 import networkx as nx
 import numpy as np
 
-from  . import clean_input_data as clean_input_data
+from  . import clean_input_data
+from  . import tag_utils
 
 def simplify_multidigraph_in_place(G):
     """Merge same-direction parallel edges in a MultiDiGraph while keeping it a MultiDiGraph."""
@@ -48,16 +49,21 @@ def simplify_multidigraph_in_place(G):
 
         # pick most bike-friendly safety class if available
         #Categorical 
-        #TODO Nuh
         for attr in categorical_attrs:
             vals = [d.get(attr) for d in edges if d.get(attr) not in (None, "", np.nan)]
-            if vals:
-                if attr == "safety" and "safety_to_risk_factor_map" in globals():
-                    agg[attr] = min(vals, key=lambda x: clean_input_data.safety_to_risk_factor_map.get(x, 99))
-                else:
-                    agg[attr] = vals[0]
-            else:
+
+            if not vals:
                 agg[attr] = None
+                continue
+
+            if attr == "highway":
+                agg[attr] = tag_utils.select_primary_label(vals, tag_utils.HIGHWAY_PRIORITY)
+            elif attr == "cycleway":
+                agg[attr] = tag_utils.select_primary_label(vals, tag_utils.CYCLEWAY_PRIORITY)
+            elif attr == "safety":
+                agg[attr] = min(vals, key=lambda x: safety_to_risk_factor_map.get(x, 999))  # safest
+            else:
+                agg[attr] = vals[0]
 
         merged_edges.append((u, v, agg))
 

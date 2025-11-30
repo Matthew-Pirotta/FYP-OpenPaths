@@ -4,7 +4,7 @@ from networkx import MultiDiGraph
 import osmnx as ox
 import networkx as nx
 import numpy as np
-from constants import SafetyClass
+from constants import SafetyClass, InfraType
 
 from collections import Counter
 
@@ -15,58 +15,73 @@ safety_to_risk_factor_map = {
     SafetyClass.MODERATE: 1.5,
     SafetyClass.CAUTION: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
     SafetyClass.DANGEROUS: 4,#TODO highway twice as costly ig?
-    SafetyClass.UNSUITABLE: 2,
     SafetyClass.UNCLASSIFIED:2,
 }
 
 #TODO
-def bike_safety_classification(G_bike:MultiDiGraph) -> MultiDiGraph:
-    for _, _, data in G_bike.edges(data=True):
-        #TODO although im filtering based on road priority for classification, i still need to see the seperate bike and car lanes
-        # and in reality they should be 2 seperate graphs? but currently the bike can cycle over the car network
-        # ig in reality i just need to see how these connections are being stored
+def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
+    for _, _, data in G.edges(data=True):
 
         highway = data.get("highway")
-        # Defines legal access — whether bicycles may use the way.
         bicycle = data.get("bicycle")
-        #Describes infrastructure type — if and how a bike facility exists
         cycleway = data.get("cycleway")
 
-        #Separated 
-        if cycleway == 'track' or highway == "cycleway" or bicycle == "designated":
+        # ==========================================================
+        # STEP 1 — Determine infra_type
+        # ==========================================================
+        if cycleway == "track" or highway == "cycleway" or bicycle == "designated":
+            infra_type = "cycle_track"        # physically separated
+        elif cycleway in {"lane"}:
+            infra_type = "bike_lane"          # painted lane
+        elif cycleway in {"shared", "shared_lane"}:
+            infra_type = "mixed"              # no markings, shared with cars
+        elif highway in {"residential", "living_street"}:
+            infra_type = "mixed"              # low-speed streets
+        else:
+            infra_type = "car"                # default assumption
+
+        # Store inferred type
+        data["infra_type"] = infra_type
+
+        # ==========================================================
+        # STEP 2 — Safety classification (fietsstraat support)
+        # ==========================================================
+        if infra_type == "cycle_track":
             classification = SafetyClass.VERY_SAFE
-        #Demarcated Shared
-        #NOTE shared_lane is not considered safe as the cyclist is travelling on the same road with no markings
-        elif cycleway in {"shared", "lane",}:
+
+        elif infra_type == "bike_lane":
             classification = SafetyClass.SAFE
 
-        # MODERATE - Cyclist-friendly streets  
-        elif highway in {"non_motorised", "residential"}:
-            classification = SafetyClass.MODERATE
+        elif infra_type == "mixed":
+            # Potentially a good fietsstraat candidate
+            if highway in {"residential", "living_street"}:
+                classification = SafetyClass.MODERATE
+            else:
+                classification = SafetyClass.CAUTION
 
-        # CAUTION - Mixed traffic but manageable
-        elif highway == "service":
-            classification = SafetyClass.CAUTION
-        
-        # Dangerous - active traffic
-        elif highway in {"trunk", "secondary","primary", "tertiary"}:
+        elif highway in {"primary", "secondary", "trunk", "tertiary"}:
             classification = SafetyClass.DANGEROUS
 
-        #Country roads not suitable for urban transport
         elif highway == "track":
-            #NOTE was "unsuitable" and has been changed to "moderate"
             classification = SafetyClass.MODERATE
+
         else:
             classification = SafetyClass.UNCLASSIFIED
 
+        # ==========================================================
+        # STEP 3 — Update attributes
+        # ==========================================================
         data["safety"] = classification
-        data["risk_factor"] = float(safety_to_risk_factor_map.get(classification))
+        data["risk_factor"] = float(safety_to_risk_factor_map[classification])
 
+        # Dangerous roads should not be bikeable
         if classification == SafetyClass.DANGEROUS:
             data["bike_allowed"] = False
-        #print(f"highway: {highway},\t\t bicycle: {bicycle},\t\t cycleway: {cycleway}") 
-    
-    return G_bike
+        else:
+            data["bike_allowed"] = True
+
+    return G
+
 
 #TODO move to clean_input data?
 def load_and_clean_localities(G, place_name) -> tuple[GeoDataFrame, GeoDataFrame]:
@@ -134,6 +149,10 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
         if (u, v) in bridges or (v, u) in bridges:
             d["reallocatable"] = False
             counters["bridge"] += 1
+
+        # Never touch protected cycle tracks
+        elif d.get("infra_type") == InfraType.CYCLE_TRACK:
+            d["reallocatable"] = False
 
         # Can only reallocate from car lanes
         elif d.get("car_allowed", False) == False:
