@@ -122,7 +122,13 @@ def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=
     results = {**connectedness, **centrality, **directness}
     return results
 
-def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDiGraph, G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, k_sample=None, seed=SEED) -> tuple:
+def heuristic_edge_betweenness_centrality(
+        G_master:MultiDiGraph,
+        G_drive:MultiDiGraph,
+        G_bikeable:MultiDiGraph,
+        G_realloc:MultiDiGraph,
+        k_sample=None, seed=SEED) -> tuple:
+    
     reallocatable_edges = set(G_realloc.edges(keys=True))
 
     if k_sample is not None:
@@ -141,6 +147,31 @@ def heuristic_edge_betweenness_centrality(G_master:MultiDiGraph, G_drive:MultiDi
     max_between_cent_edge = max(reallocatable_edges_between_cent, key=reallocatable_edges_between_cent.get)
     print(max_between_cent_edge)    
     return max_between_cent_edge
+
+def heuristic_edge_closeness_centrality(
+    G_master: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    k_sample=None,seed=SEED) -> tuple:
+
+    # 1. Get reallocatable edges
+    reallocatable_edges = set(G_realloc.edges(keys=True))
+
+    # 2. Compute *node* closeness on the bikeable network
+    node_close = nx.closeness_centrality(G_bikeable, distance="length")
+
+    # 3. Convert node closeness → edge closeness
+    edge_scores = {}
+    for (u, v, k) in reallocatable_edges:
+        cu = node_close.get(u, 0)
+        cv = node_close.get(v, 0)
+        edge_scores[(u, v, k)] = (cu + cv) / 2   # average of endpoints
+
+    # 4. Select the best edge
+    best_edge = max(edge_scores, key=edge_scores.get)
+    print("Selected edge:", best_edge, "score:", edge_scores[best_edge])
+    return best_edge
 
 def heuristic_random(G_drive:MultiDiGraph) -> tuple:
     edges = list(G_drive.edges)
