@@ -5,6 +5,9 @@ import graph_util as graph_util
 import osmnx as ox
 import networkx as nx
 import numpy as np
+import geopandas as gpd
+from shapely.geometry import Point
+from shapely.ops import unary_union
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
@@ -112,6 +115,11 @@ def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=
 
             # calc_directness
             "mean_directness": 0.0,
+
+            #Coverage
+            "coverage_area_m2": 0.0,
+            "coverage_area_km2": 0.0,
+            "union_geom": None, 
         }
 
     Gp_lcc = largest_by_length(G_protected)
@@ -119,7 +127,8 @@ def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=
     connectedness = calc_connectedness(G_protected, Gp_lcc)
     centrality  = calc_centrality(Gp_lcc, k_sample=k_sample)
     directness = calc_directness(G_protected, G_drive, k_sample=k_sample)
-    results = {**connectedness, **centrality, **directness}
+    coverage = calc_coverage(G_protected)
+    results = {**connectedness, **centrality, **directness, **coverage}
     return results
 
 def heuristic_edge_betweenness_centrality(
@@ -283,6 +292,43 @@ def heuristic_CC(G_drive:MultiDiGraph):
     comp_a, comp_b = best_pair
     edge_to_reallocate = _connect_components(G_drive, comp_a, comp_b, "CC")
     return edge_to_reallocate
+
+def calc_coverage(G, buffer_m=500):
+    """
+    Compute Szell-style coverage: union of ε-buffer around all nodes and edges.
+    Requires G to be projected (meters).
+    """
+
+    # --- 1. Collect node geometries ---
+    node_geoms = []
+    for _, data in G.nodes(data=True):
+        if "x" in data and "y" in data:
+            node_geoms.append(Point(data["x"], data["y"]))
+
+    # --- 2. Collect edge geometries ---
+    edge_geoms = []
+    for u, v, data in G.edges(data=True):
+        geom = data.get("geometry")
+        edge_geoms.append(geom)
+
+    # Convert to GeoSeries for fast buffer + union
+    all_geoms = gpd.GeoSeries(node_geoms + edge_geoms, crs=G.graph["crs"])
+
+    # --- 3. Buffer all elements ---
+    buffered = all_geoms.buffer(buffer_m)
+
+    # --- 4. Unary union: compute merged area ---
+    union_geom = unary_union(buffered)
+
+    # --- 5. Compute area in km² ---
+    area_m2 = union_geom.area
+    area_km2 = area_m2 / 1e6
+
+    return {
+        "coverage_area_m2": area_m2,
+        "coverage_area_km2": area_km2,
+        "union_geom": union_geom  # useful for debugging/plotting
+    }
 
 def _calc_network_centroid(G:MultiDiGraph, nodes:set)-> np.ndarray:
     coords = np.array([[G.nodes[n]["x"], G.nodes[n]["y"]] for n in nodes])

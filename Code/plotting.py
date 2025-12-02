@@ -15,9 +15,11 @@ from pandas import Series
 from shapely import LineString
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrow, Patch
+import geopandas as gpd
 
 
 
+from NetworkOptimisation import heuristic
 import graph_util
 from constants import SafetyClass
 
@@ -313,7 +315,7 @@ def plot_grades(G):
 
 #TODO i could prob make this neater by just doing df.plot()
 def plot_evaluation(df):
-    fig, axs = plt.subplots(3,2, figsize=(12, 8))
+    fig, axs = plt.subplots(3,2, figsize=(12, 12))
 
     # --- Plot connectedness ---
     axs[0,0].plot(df["iteration"], df["num_components"], label="Number of Components", color="red")
@@ -356,6 +358,14 @@ def plot_evaluation(df):
     axs[2,0].set_title("Directness Over Time")
     axs[2,0].legend()
     axs[2,0].grid(True, alpha=0.3)
+
+    #-- Coverage ---
+    axs[2,1].plot(df["iteration"], df["coverage_area_km2"], label="coverage area km^2", color="yellow")
+    axs[2,1].set_xlabel("Iteration")
+    axs[2,1].set_ylabel("Coverage Km^2")
+    axs[2,1].set_title("Coverage Over Time")
+    axs[2,1].legend()
+    axs[2,1].grid(True, alpha=0.3)
 
     fig.tight_layout()
     plt.show()
@@ -497,7 +507,6 @@ def plot_snapshots(
     plt.tight_layout()
     plt.show()
 
-
 def assign_adjacent_colors(gdf, cmap_name="tab20"):
     """Assign non-repeating colors to adjacent polygons using PySAL + NetworkX."""
     # Build adjacency
@@ -592,3 +601,35 @@ def plot_gdf_and_overlay(gdf, polygons_title, G=None, cmap_name="tab20", annotat
     )
 
     return gdf_colored
+
+
+
+def plot_coverage(G_master, union_geom):
+    fig, ax = plt.subplots(figsize=(10,10))
+    gpd.GeoSeries([union_geom], crs=G_master.graph["crs"]).plot(ax=ax, alpha=0.3, color="green")
+    ox.plot_graph(G_master, ax=ax, node_size=0, edge_color="black", show=False, close=False)
+    ax.set_title("Szell Coverage (500m buffer)")
+    plt.show()
+
+def plot_coverage2(G_master, diff_log):
+    snapshot_iters = np.linspace(0,len(diff_log), 4, dtype=int)
+    G_temp = copy.deepcopy(G_master)
+
+    for it in snapshot_iters:
+        # Apply reallocations up to this iteration
+        for diff_data in diff_log[:it]:
+            diff_type = diff_data.get("type")
+            edge = diff_data.get("edge")
+            if diff_type == "fixed":
+                graph_util.set_edge_attribute(G_temp, edge, "reallocatable", False)
+
+            elif diff_type == "realloc":
+                graph_util.reallocate_edge(G_temp, edge)
+
+    heuristic.network_evaluation(G_temp)
+
+    fig, ax = plt.subplots(figsize=(10,10))
+    gpd.GeoSeries([union_geom], crs=G_temp.graph["crs"]).plot(ax=ax, alpha=0.3, color="green")
+    ox.plot_graph(G_temp, ax=ax, node_size=0, edge_color="black", show=False, close=False)
+    ax.set_title("Szell Coverage (500m buffer)")
+    plt.show()
