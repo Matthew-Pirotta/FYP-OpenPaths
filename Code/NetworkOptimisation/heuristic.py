@@ -136,6 +136,7 @@ def heuristic_edge_betweenness_centrality(
         G_drive:MultiDiGraph,
         G_bikeable:MultiDiGraph,
         G_realloc:MultiDiGraph,
+        G_protected:MultiDiGraph,
         k_sample=None, seed=SEED) -> tuple:
     
     reallocatable_edges = set(G_realloc.edges(keys=True))
@@ -162,6 +163,7 @@ def heuristic_edge_closeness_centrality(
     G_drive: MultiDiGraph,
     G_bikeable: MultiDiGraph,
     G_realloc: MultiDiGraph,
+    G_protected:MultiDiGraph,
     k_sample=None,seed=SEED) -> tuple:
 
     # 1. Get reallocatable edges
@@ -182,8 +184,15 @@ def heuristic_edge_closeness_centrality(
     print("Selected edge:", best_edge, "score:", edge_scores[best_edge])
     return best_edge
 
-def heuristic_random(G_drive:MultiDiGraph) -> tuple:
-    edges = list(G_drive.edges)
+def heuristic_random(
+    G_master: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    G_protected:MultiDiGraph,) -> tuple:
+    #TODO set seed?
+
+    edges = list(G_realloc.edges)
     random_edge = random.choice(edges)
     return random_edge
 
@@ -233,18 +242,49 @@ def _connect_components(G: MultiDiGraph, source_comp: set, target_comp: set, lab
     edge = _select_bridge_edge(G, source_comp, path)
     return edge
 
-def heuristic_L2S(G: MultiDiGraph) -> tuple:
+def fallback_edge(G_bikeable, G_realloc):
+    """fallback_if_protected_empty, using edge betweenness centrality"""
+    # Fallback: pick highest-betweenness reallocatable edge
+    #TODO hard coded k_sample
+    edge = heuristic_edge_betweenness_centrality(None,None,G_bikeable,G_realloc,None, k_sample=50)
+    #TODO handle if none?
+    print(f"fallback found edge {edge}")
+    return edge
+
+def heuristic_L2S(
+        G_master:MultiDiGraph,
+        G_drive:MultiDiGraph,
+        G_bikeable:MultiDiGraph,
+        G_realloc:MultiDiGraph,
+        G_protected:MultiDiGraph,) -> tuple:
     """Largest-to-Second: Connects the two largest components."""
-    comps = sorted(nx.strongly_connected_components(G), key=len, reverse=True)
+
+    #print(f"G_protected.number_of_edges(): {G_protected.number_of_edges()}, cond:{G_protected.number_of_edges() < 2}" )
+    if G_protected.number_of_edges() < 3:
+        return fallback_edge(G_bikeable,G_realloc)
+
+    comps = sorted(nx.strongly_connected_components(G_protected), key=len, reverse=True)
+    #print(f"the comps are: {comps}")
     if len(comps) < 2:
         print("Already connected")
         return None
-    edge_to_reallocate = _connect_components(G, comps[0], comps[1], "L2S") 
+    
+    #NOTE it is done through G_drive, as the bike network may be disconnected
+    edge_to_reallocate = _connect_components(G_drive, comps[0], comps[1], "L2S") 
     return edge_to_reallocate
 
 
-def heuristic_L2C(G_drive:MultiDiGraph):
-    components = sorted(nx.strongly_connected_components(G_drive), key=len, reverse=True)
+def heuristic_L2C(
+        G_master:MultiDiGraph,
+        G_drive:MultiDiGraph,
+        G_bikeable:MultiDiGraph,
+        G_realloc:MultiDiGraph,
+        G_protected:MultiDiGraph,):
+    
+    if G_protected.number_of_edges() < 3:
+        return fallback_edge(G_bikeable,G_realloc)
+    
+    components = sorted(nx.strongly_connected_components(G_protected), key=len, reverse=True)
     if len(components) < 2:
         print("Already connected")
         return None
@@ -252,13 +292,22 @@ def heuristic_L2C(G_drive:MultiDiGraph):
     largest = components[0]
     others = components[1:]
 
-    closest_component, _ = _find_closest_component(G_drive, largest, others)
+    closest_component, _ = _find_closest_component(G_bikeable, largest, others)
 
     edge_to_reallocate = _connect_components(G_drive, largest,closest_component, "L2C")
     return edge_to_reallocate
 
-def heuristic_R2C(G_drive:MultiDiGraph):
-    components = list(nx.strongly_connected_components(G_drive))
+def heuristic_R2C(
+        G_master:MultiDiGraph,
+        G_drive:MultiDiGraph,
+        G_bikeable:MultiDiGraph,
+        G_realloc:MultiDiGraph,
+        G_protected:MultiDiGraph,):
+    
+    if G_protected.number_of_edges() < 3:
+        return fallback_edge(G_bikeable,G_realloc)
+
+    components = list(nx.strongly_connected_components(G_protected))
     if len(components) < 2:
         print("Already connected")
         return None
@@ -268,13 +317,22 @@ def heuristic_R2C(G_drive:MultiDiGraph):
     random_component = components[0]
     other_components = components[1:]
 
-    closest_component, _ = _find_closest_component(G_drive, random_component, other_components)
+    closest_component, _ = _find_closest_component(G_bikeable, random_component, other_components)
 
     edge_to_reallocate = _connect_components(G_drive, random_component,closest_component, "R2C")
     return edge_to_reallocate
 
-def heuristic_CC(G_drive:MultiDiGraph):
-    components = list(nx.strongly_connected_components(G_drive))
+def heuristic_CC(
+        G_master:MultiDiGraph,
+        G_drive:MultiDiGraph,
+        G_bikeable:MultiDiGraph,
+        G_realloc:MultiDiGraph,
+        G_protected:MultiDiGraph,):
+    
+    if G_protected.number_of_edges() < 3:
+        return fallback_edge(G_bikeable,G_realloc)
+
+    components = list(nx.strongly_connected_components(G_protected))
     if len(components) < 2:
         print("Already connected")
         return None
@@ -284,7 +342,7 @@ def heuristic_CC(G_drive:MultiDiGraph):
 
     for i, comp in enumerate(components):
         other_components = components[i + 1:]
-        closest_component, dist = _find_closest_component(G_drive, comp, other_components)
+        closest_component, dist = _find_closest_component(G_bikeable, comp, other_components)
         if closest_component and dist < min_dist:
                 min_dist = dist
                 best_pair = (comp, closest_component)

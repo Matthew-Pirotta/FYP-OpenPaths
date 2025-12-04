@@ -42,15 +42,16 @@ def run_locality_task(args):
         G_drive = graph_util.make_drive_subgraph(G_working)
         G_bikeable = graph_util.make_bikeable_subgraph(G_working)
         G_realloc = graph_util.make_reallocatable_subgraph(G_bikeable)
+        G_protected = graph_util.make_protected_subgraph(G_working)
         #print(f"G_realloc.number_of_edges(): {G_realloc.number_of_edges()}")
         if G_realloc.number_of_edges() == 0:
             print(f"🚫 No reallocatable edges left for {name}, stopping early at iteration {i}")
             break 
 
         if "k_sample" in sig.parameters:
-            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc, k_sample=k_sample)
+            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected, k_sample=k_sample)
         else:
-            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,)
+            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected)
         can_reallocate = graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate)
 
         if can_reallocate:
