@@ -52,7 +52,13 @@ def run_locality_task(args):
             edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected, k_sample=k_sample)
         else:
             edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected)
+
+        if edge_to_reallocate == None:
+            print("No more valid edges left to reallocate")
+            break
+        
         can_reallocate = graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate)
+
 
         if can_reallocate:
             reallocated_edges = graph_util.reallocate_edge(G_working, edge_to_reallocate)

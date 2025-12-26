@@ -62,6 +62,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     """Convert an edge into a fietsstraat (bike-priority street).
     #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
     u, v, k = edge_id
+    #print(f"edge_id: {edge_id}")
     d = G[u][v][k]
     reallocated = []
 
