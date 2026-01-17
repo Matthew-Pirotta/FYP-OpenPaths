@@ -61,9 +61,9 @@ def plot_coverage(G_master, union_geom, title="Coverage Area"):
 def plot_OD_points(
     G,
     gdf_residential=None,
-    gdf_amenities=None,
+    gdf_destinations=None,
     *,
-    amenity_size_col=None,
+    destination_size_col=None,
     origin_point=None,
     destination_point=None,
     figsize=(14, 14),
@@ -81,13 +81,13 @@ def plot_OD_points(
             mpatches.Patch(facecolor="lightblue", alpha=0.6, label="Residential Areas")
         )
 
-    if gdf_amenities is not None:
+    if gdf_destinations is not None:
         sizes = (
-            gdf_amenities[amenity_size_col] * 4
-            if amenity_size_col and amenity_size_col in gdf_amenities.columns
+            gdf_destinations[destination_size_col] * 4
+            if destination_size_col and destination_size_col in gdf_destinations.columns
             else 6
         )
-        gdf_amenities.plot(ax=ax, color="orange", markersize=sizes, alpha=0.7)
+        gdf_destinations.plot(ax=ax, color="orange", markersize=sizes, alpha=0.7)
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -96,7 +96,7 @@ def plot_OD_points(
                 marker="o",
                 linestyle="None",
                 markersize=8,
-                label="Amenities",
+                label="Destinations",
             )
         )
 

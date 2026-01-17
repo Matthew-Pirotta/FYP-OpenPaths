@@ -2,6 +2,7 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 import random
+import pandas as pd
 
 #region sampling Origin
 def sample_point_in_polygon(polygon, max_tries=100):
@@ -41,64 +42,90 @@ def sample_point_from_regions_weighted(gdf_regions):
     return sample_point_in_polygon(geom)
 
 
-#region sampling Destinatiob
-AMENITY_WEIGHTS = {
-    # High-importance destinations
+#region sampling Destination
+
+DESTINATION_WEIGHTS = {
+    # --- High-importance (anchor trips) ---
     "hospital": 5.0,
     "school": 5.0,
     "university": 5.0,
 
-    # Medium-importance destinations
+    # --- Work-related ---
+    "government": 4.0,
+
+    # --- Retail & services ---
+    "supermarket": 3.0,
+    "mall": 3.0,
+    "shop": 3.0,
+
+    # --- Food / social ---
+    "restaurant": 2.0,
+    "convenience":2.0,
     "cafe": 2.0,
     "fast_food": 2.0,
     "pub": 2.0,
-    "restaurant": 2.0,
+    "bar":2.0,
 
-    # Low-importance / default
-    "rest": 1.0
+    # --- Low-priority / fallback ---
+    "default": 1.0
 }
 
 
+def infer_destination_type_and_subtype(row):
+    if pd.notna(row.get("office")):
+        return "office", row.get("office")
+    if pd.notna(row.get("shop")):
+        return "shop", row.get("shop")
+    if pd.notna(row.get("amenity")):
+        return "amenity", row.get("amenity")
+    return "other", None
 
-def prepare_amenities_with_weights(gdf_amenities, amenity_weights):
-    """
-    Ensure amenities are points and assign attractiveness weights. 
-    All amenities were converted to point destinations using centroids; original OSM element types were discarded.
-    """
-    gdf = gdf_amenities.copy()
 
-    # Convert geometries to points if needed
+def prepare_destinations_with_weights(gdf, weight_map):
+    """
+    Prepare a canonical destination layer for OD generation.
+
+    Output columns:
+        - geometry (Point)
+        - dest_type (amenity | shop | office | other)
+        - dest_subtype (e.g. cafe, school, office)
+        - weight (float)
+    """
+    gdf = gdf.copy()
+
+    # Ensure point geometry
     if not all(gdf.geometry.geom_type == "Point"):
         gdf["geometry"] = gdf.geometry.centroid
 
+    # Infer destination type and subtype
+    inferred = gdf.apply(infer_destination_type_and_subtype, axis=1)
+    gdf["dest_type"] = inferred.apply(lambda x: x[0])
+    gdf["dest_subtype"] = inferred.apply(lambda x: x[1])
+
     # Assign weights
     def get_weight(row):
-        amenity = row.get("amenity")
-        return amenity_weights.get(amenity, amenity_weights["rest"])
+        subtype = row["dest_subtype"]
+        return weight_map.get(subtype, weight_map["default"])
 
     gdf["weight"] = gdf.apply(get_weight, axis=1)
 
-    gdf = gdf[["geometry", "amenity", "weight"]]
+    return gdf[["geometry", "dest_type", "dest_subtype", "weight"]]
 
-    return gdf
-
-
-
-def sample_amenity_destination(
+def sample_destination(
     origin: Point,
-    amenities: gpd.GeoDataFrame,
+    destinations: gpd.GeoDataFrame,
     beta: float = 0.001,
     max_dist: float | None = None,
 ):
     """
-    Sample an amenity destination using an exponential gravity model.
+    Sample an destinatio using an exponential gravity model.
 
     Parameters
     ----------
     origin : Point
         Origin point (projected CRS)
-    gdf_amenities : GeoDataFrame
-        Amenity locations (points or polygons)
+    gdf_destinations : GeoDataFrame
+        Destination locations (points or polygons)
     beta : float
         Distance decay parameter (1/meters)
     max_dist : float, optional
@@ -110,15 +137,15 @@ def sample_amenity_destination(
     """
 
     # Compute distances
-    distances = amenities.geometry.distance(origin)
+    distances = destinations.geometry.distance(origin)
 
     if max_dist is not None:
         mask = distances <= max_dist
-        amenities = amenities[mask]
+        destinations = destinations[mask]
         distances = distances[mask]
 
-        if len(amenities) == 0:
-            raise ValueError("No amenities within max_dist")
+        if len(destinations) == 0:
+            raise ValueError("No destinations within max_dist")
 
     # Gravity weights
     weights = np.exp(-beta * distances.values)
@@ -127,5 +154,5 @@ def sample_amenity_destination(
     probs = weights / weights.sum()
 
     # Sample
-    idx = np.random.choice(len(amenities), p=probs)
-    return amenities.iloc[idx].geometry
+    idx = np.random.choice(len(destinations), p=probs)
+    return destinations.iloc[idx].geometry
