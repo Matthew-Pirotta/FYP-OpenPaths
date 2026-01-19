@@ -3,9 +3,14 @@ import geopandas as gpd
 from shapely.geometry import Point
 import random
 import pandas as pd
+import osmnx as ox
+from collections import Counter
+
+
+DEFAULT_BETA = 0.001
 
 #region sampling Origin
-def sample_point_in_polygon(polygon, max_tries=100):
+def sample_point_in_polygon(polygon, rng, max_tries=100):
     """
     Uniformly sample a point inside a (Multi)Polygon using rejection sampling.
     """
@@ -13,15 +18,15 @@ def sample_point_in_polygon(polygon, max_tries=100):
 
     for _ in range(max_tries):
         p = Point(
-            random.uniform(minx, maxx),
-            random.uniform(miny, maxy),
+            rng.uniform(minx, maxx),
+            rng.uniform(miny, maxy),
         )
         if polygon.contains(p):
             return p
 
     raise RuntimeError("Failed to sample point inside polygon")
 
-def sample_point_from_regions_weighted(gdf_regions):
+def sample_point_from_regions_weighted(gdf_regions, rng):
     """
     Sample a random point from regions, weighted by polygon area.
     """
@@ -37,9 +42,9 @@ def sample_point_from_regions_weighted(gdf_regions):
     geom = row.geometry
 
     if geom.geom_type == "MultiPolygon":
-        geom = random.choice(list(geom.geoms))
+        geom = geom.geoms[rng.integers(len(geom.geoms))]
 
-    return sample_point_in_polygon(geom)
+    return sample_point_in_polygon(geom, rng)
 
 
 #region sampling Destination
@@ -111,12 +116,7 @@ def prepare_destinations_with_weights(gdf, weight_map):
 
     return gdf[["geometry", "dest_type", "dest_subtype", "weight"]]
 
-def sample_destination(
-    origin: Point,
-    destinations: gpd.GeoDataFrame,
-    beta: float = 0.001,
-    max_dist: float | None = None,
-):
+def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng ,beta:float=DEFAULT_BETA, max_dist:float|None=None,):
     """
     Sample an destinatio using an exponential gravity model.
 
@@ -154,5 +154,55 @@ def sample_destination(
     probs = weights / weights.sum()
 
     # Sample
-    idx = np.random.choice(len(destinations), p=probs)
+    idx = rng.choice(len(destinations), p=probs)
     return destinations.iloc[idx].geometry
+
+#region gen_OD
+def gen_OD(
+    G,
+    gdf_residential,
+    gdf_destinations,
+    rng,
+    n_trips: int = 50,
+    beta: float = DEFAULT_BETA,
+    max_dist: float | None = None,
+):
+    """
+    Generate sparse weighted OD list:
+        (origin_node, destination_node, weight)
+
+    Weight corresponds to how many times this OD pair
+    was sampled (Monte Carlo approximation of demand).
+    """
+    od_counts = Counter()
+
+    for _ in range(n_trips):
+        origin_pt = sample_point_from_regions_weighted(
+            gdf_residential, rng
+        )
+
+        destination_pt = sample_destination_gravity(
+            origin_pt,
+            gdf_destinations,
+            rng,
+            beta=beta,
+            max_dist=max_dist,
+        )
+
+        origin_node = ox.distance.nearest_nodes(
+            G, origin_pt.x, origin_pt.y
+        )
+        dest_node = ox.distance.nearest_nodes(
+            G, destination_pt.x, destination_pt.y
+        )
+
+        # Skip trivial OD
+        if origin_node == dest_node:
+            continue
+
+        od_counts[(origin_node, dest_node)] += 1
+
+    # Convert to weighted OD list
+    ods = [(o, d, w) for (o, d), w in od_counts.items()]
+
+    return ods

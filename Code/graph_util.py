@@ -7,7 +7,7 @@ from collections import Counter
 
 
 from constants import SafetyClass
-
+from PreProcessing import enrich_attributes
 FIETSSRAAT_MAX_SPEED = 10
 
 # region Subgraph generators
@@ -78,7 +78,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     
     # 4. Set safety level appropriate to fietsstraat
     d["safety"] = SafetyClass.SAFE
-    #d["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
+    d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
 
     #5.maxspeed
     d["maxspeed"] = FIETSSRAAT_MAX_SPEED
@@ -101,7 +101,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         d_rev["infra_type"] = "fietsstraat"
         d_rev["safety"] = SafetyClass.SAFE
         d_rev["maxspeed"] = FIETSSRAAT_MAX_SPEED
-        #d_rev["risk_factor"] = float(safety_to_risk_factor_map[SafetyClass.SAFE])
+        d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
 
@@ -113,6 +113,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         attrs["car_lanes"] = 0
         attrs["geometry"] = d["geometry"].reverse() #road shape
         attrs["grade"] = -d["grade"]
+        attrs["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
         attrs["reallocatable"] = False
         attrs["infra_type"] = "fietsstraat"
         attrs["safety"] = SafetyClass.SAFE
@@ -121,6 +122,9 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
 
         #If adding a new first edge then the key must be 0 
         reallocated.append((v, u, 0))
+
+    enrich_attributes.update_bike_costs(G, reallocated)
+
     
     return reallocated
 
