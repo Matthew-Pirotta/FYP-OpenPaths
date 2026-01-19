@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.ticker import PercentFormatter
+
 import osmnx as ox
 from Plotting.utils import color_hist
 from Plotting.renderer import draw_graph
@@ -35,24 +37,23 @@ def plot_elevation(G):
 
 
 def plot_grades(G):
-    grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True) if d.get("grade") is not None]
+    grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True)]
 
     cmap = plt.cm.managua_r
-    norm = mcolors.Normalize(vmin=-0.1, vmax=0.1)
+    norm = mcolors.Normalize(vmin=-0.1, vmax=0.1, clip=True)
 
     # --- Grade distribution ---
     fig, ax = plt.subplots(figsize=(14, 5))
-    typical = [g for g in grades if -0.2 < g < 0.2]
-
     color_hist(
         ax,
-        typical,
+        grades,
         bins=40,
         cmap=cmap,
         norm=norm,
-        title="Typical Road Grades",
+        title="Road Grades",
         xlabel="Grade",
     )
+    ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
 
     fig.tight_layout()
     plt.show()
@@ -63,7 +64,8 @@ def plot_grades(G):
     fig, ax = draw_graph(G, edge_color=edge_colors, node_size=0)
 
     sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    fig.colorbar(sm, ax=ax, label="Edge Grade", fraction=0.03, pad=0.01)
+    cbar = fig.colorbar(sm, ax=ax, label="Edge Grade (%)", extend="both" ,fraction=0.03, pad=0.01, format=PercentFormatter(xmax=1.0, decimals=0))
+    cbar.set_label("Edge Grade (%)")
 
     ax.set_title("Spatial Grade Map")
     ax.axis("off")
