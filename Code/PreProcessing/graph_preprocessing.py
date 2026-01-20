@@ -62,6 +62,7 @@ def clean_graph(G:MultiDiGraph, place_name):
     G = ox.distance.add_edge_lengths(G)
 
     enrich_attributes.bike_safety_classification(G)
+    enrich_attributes.update_bike_costs(G)
     enrich_attributes.tag_reallocatable_edges(G, verbose=True)
     gdf_regions_proj, gdf_local_proj = enrich_attributes.load_and_clean_localities(G, place_name)
     #NOTE imp to project before assigning regions due to using x and y co-ordinates

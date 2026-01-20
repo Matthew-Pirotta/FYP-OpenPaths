@@ -4,7 +4,7 @@ from matplotlib.ticker import PercentFormatter
 
 import osmnx as ox
 from Plotting.utils import color_hist
-from Plotting.renderer import draw_graph
+from Plotting.renderer import draw_graph, plot_graph_by_edge_attr
 
 
 def plot_elevation(G):
@@ -36,6 +36,8 @@ def plot_elevation(G):
     plt.show()
 
 
+#TODO use plot_graph_by_edge_attr instead
+#plot_graph_by_edge_attr(G, "grade", cmap=cmap, title="Spatial Grade Map", label="Edge Grade (%)")
 def plot_grades(G):
     grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True)]
 

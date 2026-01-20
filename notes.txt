@@ -59,12 +59,15 @@ risk_factor: float
 car_allowed: bool (is from drive network)
 bike_allowed: bool (True if from bike network, then set false if safety class is Dangerous)
 reallocatable: bool (False if bridge or car not allowed)
+bike_cost_penalty: float,
 
 constants:
 grade: float
 width: float
 region: str
 locality: str
+bike_cost_base: float,
+
 -----
 
 the biking network which is being expanded is the pure protected graph
@@ -102,6 +105,11 @@ filters["bike"] = (
     f'["bicycle"!~"no"]["service"!~"private"]'
 )
 ------ 
+Mathemical
+
+When Gurobi solves a MILP, it uses branch-and-bound:
+
+-------
 
 Resources
 
