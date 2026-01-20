@@ -2,12 +2,15 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
+from shapely.geometry import LineString
+import numpy as np
 
 from Plotting.utils import assign_adjacent_colors
 from Plotting.renderer import draw_graph
 
-
+#region Optimisation
 def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
+    """Plot the location and the region outlines, and the transport network if passed"""
     fig, ax = plt.subplots(figsize=(10, 10))
 
     if G is not None:
@@ -34,7 +37,9 @@ def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
     return gdf_colored
 
 
+#region Metrics
 def plot_coverage(G_master, union_geom, title="Coverage Area"):
+    """Dispalys a green area in which locations are rechable throhg the transport network given a certain radius"""
     fig, ax = plt.subplots(figsize=(10, 10))
 
     gpd.GeoSeries([union_geom], crs=G_master.graph["crs"]).plot(
@@ -58,6 +63,7 @@ def plot_coverage(G_master, union_geom, title="Coverage Area"):
     plt.show()
 
 
+# region OD spatial
 def plot_OD_points(
     G,
     gdf_residential=None,
@@ -143,3 +149,85 @@ def plot_OD_points(
     ax.axis("off")
     fig.tight_layout()
     plt.show()
+
+def build_OD_lines_gdf(G, OD, *, use_weights=True):
+    """
+    Build a GeoDataFrame of straight OD lines.
+
+    Parameters
+    ----------
+    G : networkx graph
+    OD : iterable of (origin_node, destination_node, weight)
+    use_weights : bool
+        If True, store OD weight for plotting (alpha/linewidth)
+
+    Returns
+    -------
+    GeoDataFrame with geometry = LineString
+    """
+    lines = []
+    weights = []
+
+    for o, d, w in OD:
+        xo, yo = G.nodes[o]["x"], G.nodes[o]["y"]
+        xd, yd = G.nodes[d]["x"], G.nodes[d]["y"]
+
+        lines.append(LineString([(xo, yo), (xd, yd)]))
+        weights.append(w if use_weights else 1)
+
+    gdf = gpd.GeoDataFrame(
+        {"weight": weights},
+        geometry=lines,
+        crs=G.graph["crs"],
+    )
+
+    return gdf
+
+
+def plot_OD_lines(
+    G,
+    OD,
+    *,
+    alpha=0.05,
+    linewidth=1.0,
+    figsize=(14, 14),
+    title=None,
+):
+    """
+    Plot straight-line OD pairs over the network.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Base graph
+    fig, ax = draw_graph(
+        G,
+        ax=ax,
+        node_size=0,
+        edge_color="lightgray",
+        edge_linewidth=0.5,
+    )
+
+    # Build OD lines
+    gdf_od = build_OD_lines_gdf(G, OD)
+
+    # Optional: scale linewidth or alpha by weight
+    if "weight" in gdf_od.columns:
+        lw = np.clip(gdf_od["weight"] / gdf_od["weight"].max(), 0.1, 1.0) * linewidth
+    else:
+        lw = linewidth
+
+    gdf_od.plot(
+        ax=ax,
+        color="red",
+        linewidth=lw,
+        alpha=alpha,
+    )
+
+    if title:
+        ax.set_title(title)
+
+    ax.axis("off")
+    fig.tight_layout()
+    plt.show()
+
+    return gdf_od

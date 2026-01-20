@@ -158,7 +158,33 @@ def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng
     return destinations.iloc[idx].geometry
 
 #region gen_OD
-def gen_OD(
+def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=3000,):
+    nodes = np.array(list(G.nodes))
+    xs = np.array([G.nodes[n]["x"] for n in nodes])
+    ys = np.array([G.nodes[n]["y"] for n in nodes])
+
+    c = Counter()
+    tries = 0
+
+    while sum(c.values()) < n_trips and tries < n_trips * 50:
+        i = rng.integers(len(nodes))
+        j = rng.integers(len(nodes))
+        if i == j:
+            tries += 1
+            continue
+
+        dx = xs[i] - xs[j]
+        dy = ys[i] - ys[j]
+        if (dx*dx + dy*dy) ** 0.5 < min_euclid_m:
+            tries += 1
+            continue
+
+        c[(int(nodes[i]), int(nodes[j]))] += 1
+        tries += 1
+
+    return c
+
+def gen_demand_OD_counter(
     G,
     gdf_residential,
     gdf_destinations,
@@ -202,7 +228,63 @@ def gen_OD(
 
         od_counts[(origin_node, dest_node)] += 1
 
-    # Convert to weighted OD list
+    return od_counts
+
+
+def gen_OD(
+    G,
+    gdf_residential,
+    gdf_destinations,
+    rng,
+    n_trips: int = 50,
+    random_frac: float = 0.0,
+    beta: float = DEFAULT_BETA,
+    max_dist: float | None = None,
+    min_random_dist: float = 3000,
+):
+    """
+    Generate a mixed OD matrix consisting of:
+      - demand-driven ODs (gravity-based)
+      - random long-distance ODs (structural probing)
+
+    Parameters
+    ----------
+    n_trips : int
+        Number of demand-driven trips
+    random_frac : float
+        Fraction of random trips relative to demand trips (e.g. 0.1 = 10%)
+    """
+
+    if not (0.0 <= random_frac <= 1.0):
+        raise ValueError("random_frac must be in [0, 1]")
+
+    # --- Demand ODs ---
+    demand_counter = gen_demand_OD_counter(
+        G,
+        gdf_residential,
+        gdf_destinations,
+        rng,
+        n_trips=n_trips,
+        beta=beta,
+        max_dist=max_dist,
+    )
+
+    # --- Random ODs ---
+    n_random = int(random_frac * n_trips)
+    if n_random > 0:
+        random_counter = gen_random_OD_counter(
+            G,
+            rng,
+            n_trips=n_random,
+            min_euclid_m=min_random_dist,
+        )
+    else:
+        random_counter = Counter()
+
+    # --- Combine ---
+    od_counts = demand_counter + random_counter
+
+    # --- Convert to weighted list ---
     ods = [(o, d, w) for (o, d), w in od_counts.items()]
 
     return ods

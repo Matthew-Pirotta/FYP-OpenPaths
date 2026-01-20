@@ -3,7 +3,7 @@ from Plotting.network import plot_safety, plot_boolean_attribute
 from Plotting.attributes import plot_elevation, plot_grades
 from Plotting.evolution import plot_snapshots, plot_network_evolution
 from Plotting.evaluation import plot_metrics
-from Plotting.spatial import plot_gdf_and_overlay, plot_coverage, plot_OD_points
+from Plotting.spatial import plot_gdf_and_overlay, plot_coverage, plot_OD_points, plot_OD_lines
 
 __all__ = [
     "draw_graph",
@@ -18,4 +18,5 @@ __all__ = [
     "plot_gdf_and_overlay",
     "plot_coverage",
     "plot_OD_points",
+    "plot_OD_lines"
 ]
