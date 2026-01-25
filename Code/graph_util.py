@@ -33,7 +33,7 @@ def make_region_subgraph(G: MultiDiGraph, region: str) -> MultiDiGraph:
     return _filter_edges(G, lambda d: region in d.get("regions"))
 
 def make_locality_subgraph(G:MultiDiGraph, locality) -> MultiDiGraph:
-    return _filter_edges(G, lambda d: locality in d.get("locality"))
+    return _filter_edges(G, lambda d: locality in d.get("localities"))
 
 def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
