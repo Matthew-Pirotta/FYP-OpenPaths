@@ -7,7 +7,7 @@ import graph_util
 from Plotting.renderer import draw_graph
 from constants import SafetyClass
 
-
+#TODO remove diff_type
 def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True):
     """Plot network snapshots at given iterations with optional safety classification coloring."""
     snapshot_iters = np.linspace(0, len(diff_log), num_snapshots, dtype=int)
@@ -29,13 +29,9 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
 
         # Apply reallocations up to this iteration
         for diff_data in diff_log[:it]:
-            diff_type = diff_data.get("type")
             edge = diff_data.get("edge")
 
-            if diff_type == "fixed":
-                graph_util.set_edge_attribute(G_temp, edge, "reallocatable", False)
-            elif diff_type == "realloc":
-                graph_util.reallocate_edge(G_temp, edge)
+            graph_util.reallocate_edge(G_temp, edge)
 
         # Edge coloring
         if show_classification:
@@ -76,7 +72,6 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
     else:
         legend_elements = [
             mpatches.Patch(color="green", label="Bike infrastructure"),
-            mpatches.Patch(color="red", label="Fixed Car lane"),
             mpatches.Patch(color="gray", label="Other"),
         ]
 
@@ -104,9 +99,6 @@ def plot_network_evolution(G_master, diff_log):
     norm = plt.Normalize(0, len(diff_log))
 
     for i, diff_data in enumerate(diff_log):
-        if diff_data.get("type") != "realloc":
-            continue
-
         u, v, k = diff_data.get("edge")
         if not G_master.has_edge(u, v, k):
             continue
