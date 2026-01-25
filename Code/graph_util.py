@@ -25,11 +25,15 @@ def make_reallocatable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
 def make_protected_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("safety") in [SafetyClass.SAFE, SafetyClass.VERY_SAFE])
 
-def make_region_subgraph(G:MultiDiGraph, region)-> MultiDiGraph:
-    return _filter_edges(G, lambda d: d.get("region") == region)
+def make_region_subgraph(G: MultiDiGraph, region: str) -> MultiDiGraph:
+    """
+    Subgraph containing all edges that intersect the given region.
+    Boundary edges are included.
+    """
+    return _filter_edges(G, lambda d: region in d.get("regions"))
 
 def make_locality_subgraph(G:MultiDiGraph, locality) -> MultiDiGraph:
-    return _filter_edges(G, lambda d: d.get("locality") == locality)
+    return _filter_edges(G, lambda d: locality in d.get("locality"))
 
 def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
@@ -168,3 +172,42 @@ def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) ->
     data = G[u][v][k]
     data[attribute_name] = value
     return G
+
+
+#TODO check if i want to keep the deep copy or not
+def recombine_subgraphs_into_master(
+    G_master: MultiDiGraph,
+    subgraphs: dict[str, MultiDiGraph],
+) -> MultiDiGraph:
+    """
+    Recombine locality subgraphs back into a master graph.
+
+    Rule:
+      - If an edge is reallocated in at least one subgraph,
+        it is reallocated in the master graph.
+      - Reallocation is monotonic and irreversible.
+    """
+
+    G_new = copy.deepcopy(G_master)
+
+    # Helper: detect whether an edge is reallocated
+    def is_reallocated(d):
+        return (
+            d.get("infra_type") == "fietsstraat"
+            or d.get("safety") == SafetyClass.SAFE
+            or d.get("safety") == SafetyClass.VERY_SAFE
+        )
+
+    # Iterate over all subgraphs
+    for loc_name, G_sub in subgraphs.items():
+        for u, v, k, d_sub in G_sub.edges(keys=True, data=True):
+
+            d_master = G_new[u][v][k]
+
+            # If subgraph edge is reallocated and master is not yet
+            if is_reallocated(d_sub) and not is_reallocated(d_master):
+                # Apply reallocation in master
+                # IMPORTANT: call the same canonical logic
+                reallocate_edge(G_new, (u, v, k))
+
+    return G_new

@@ -183,55 +183,57 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
 
 
 
-def assign_edge_regions(G, gdf_regions_proj, gdf_local_proj) -> MultiDiGraph:
+def assign_edge_regions( G: MultiDiGraph, gdf_regions_proj, gdf_local_proj,) -> MultiDiGraph:
     """
-    Assign each edge both a region (admin_level=7) and a locality/town (admin_level=8)
-    based on the centroid of its geometry.
-    If not contained in any polygon, the nearest polygon of each level is used.
+    Assign each edge:
+      - all intersecting regions (admin_level=7)
+      - all intersecting localities/towns (admin_level=8)
+
+    Attributes added:
+      - d["regions"]    : list[str]
+      - d["localities"] : list[str]
     """
-    # Split for convenience
+
     sindex_regions = gdf_regions_proj.sindex
     sindex_local   = gdf_local_proj.sindex
 
     for u, v, k, d in G.edges(keys=True, data=True):
         geom = d.get("geometry")
-        if geom is None:
+        if geom is None or geom.is_empty:
+            d["regions"] = []
+            d["localities"] = []
             continue
-        centroid = geom.centroid
 
-        # ---- Region (level 7) ----
-        found_region = None
-        for idx in sindex_regions.intersection(centroid.bounds):
+        # ---- Regions (admin_level=7) ----
+        regions = []
+        for idx in sindex_regions.intersection(geom.bounds):
             row = gdf_regions_proj.iloc[idx]
-            if row.geometry.contains(centroid):
-                found_region = row["name"]
-                break
-        if not found_region:  # fallback nearest
-            min_dist, nearest_name = float("inf"), None
-            for idx, row in gdf_regions_proj.iterrows():
-                dist = centroid.distance(row.geometry)
-                if dist < min_dist:
-                    min_dist, nearest_name = dist, row["name"]
-            found_region = nearest_name
+            if geom.intersects(row.geometry):
+                regions.append(row["name"])
 
-        # ---- Locality (level 8) ----
-        found_local = None
-        for idx in sindex_local.intersection(centroid.bounds):
+        # Fallback: nearest region if none intersect
+        if not regions:
+            centroid = geom.centroid
+            nearest_idx = gdf_regions_proj.geometry.distance(centroid).idxmin()
+            regions = [gdf_regions_proj.loc[nearest_idx, "name"]]
+
+
+        # ---- Localities (admin_level=8) ----
+        localities = []
+        for idx in sindex_local.intersection(geom.bounds):
             row = gdf_local_proj.iloc[idx]
-            if row.geometry.contains(centroid):
-                found_local = row["name"]
-                break
-        if not found_local:  # fallback nearest
-            min_dist, nearest_name = float("inf"), None
-            for idx, row in gdf_local_proj.iterrows():
-                dist = centroid.distance(row.geometry)
-                if dist < min_dist:
-                    min_dist, nearest_name = dist, row["name"]
-            found_local = nearest_name
+            if geom.intersects(row.geometry):
+                localities.append(row["name"])
 
-        # Assign both attributes
-        d["region"] = found_region
-        d["locality"] = found_local
+        # Fallback: nearest locality if none intersect
+        if not localities:
+            centroid = geom.centroid
+            nearest_idx = gdf_local_proj.geometry.distance(centroid).idxmin()
+            localities = [gdf_local_proj.loc[nearest_idx, "name"]]
+
+        # Assign attributes
+        d["regions"] = sorted(set(regions))
+        d["localities"] = sorted(set(localities))
 
     return G
 
