@@ -6,9 +6,9 @@ import numpy as np
 from collections import Counter
 
 
+import constants
 from constants import SafetyClass
 from PreProcessing import enrich_attributes
-FIETSSRAAT_MAX_SPEED = 10
 
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
@@ -84,8 +84,8 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     d["safety"] = SafetyClass.SAFE
     d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
 
-    #5.maxspeed
-    d["maxspeed"] = FIETSSRAAT_MAX_SPEED
+    #5.speed_kph
+    d["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
 
     # 6. After conversion, edge should not be converted again
     d["reallocatable"] = False
@@ -104,7 +104,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         d_rev["bike_allowed"] = True
         d_rev["infra_type"] = "fietsstraat"
         d_rev["safety"] = SafetyClass.SAFE
-        d_rev["maxspeed"] = FIETSSRAAT_MAX_SPEED
+        d_rev["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
         d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
@@ -121,7 +121,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         attrs["reallocatable"] = False
         attrs["infra_type"] = "fietsstraat"
         attrs["safety"] = SafetyClass.SAFE
-        attrs["maxspeed"] = FIETSSRAAT_MAX_SPEED
+        attrs["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
         G.add_edge(v, u, **attrs)
 
         #If adding a new first edge then the key must be 0 

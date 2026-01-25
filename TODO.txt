@@ -1,5 +1,7 @@
 - Make rng consistent throughout whole script
-
+- In reality is G_bike even doing anything? Like is it actually helping ppl reach places?
+- reallocatable logic is still in code
+- move all constants to the cosntants script
 
 ----
 - Get some consensus of how much ppl prefer detour for safety over risky direct.

@@ -4,7 +4,7 @@ from networkx import MultiDiGraph
 import osmnx as ox
 import networkx as nx
 import numpy as np
-from constants import SafetyClass, InfraType
+from constants import SafetyClass, InfraType, FIETSSTRAAT_SPEED_KMH
 
 from collections import Counter
 
@@ -237,6 +237,7 @@ def assign_edge_regions( G: MultiDiGraph, gdf_regions_proj, gdf_local_proj,) -> 
 
     return G
 
+
 # region bike costs
 
 def _compute_bike_costs_from_grade(
@@ -309,3 +310,50 @@ def update_bike_costs(
         d["bike_cost_base"] = base
         d["bike_cost_penalty"] = penalty
 
+# region car cost
+def _compute_car_costs(length_m: float, maxspeed_kph: float, fietsstraat_speed_kmh: float = FIETSSTRAAT_SPEED_KMH):
+    KMH_to_MS = 1000/3600
+
+    # baseline
+    v_base = maxspeed_kph * KMH_to_MS
+    car_cost_base = length_m / v_base
+
+    # after fietsstraat
+    v_fietsstraat = fietsstraat_speed_kmh * KMH_to_MS
+    car_cost_fietsstraat = length_m / v_fietsstraat
+
+    return car_cost_base, car_cost_fietsstraat
+
+
+def update_car_costs(
+    G: MultiDiGraph,
+    edges: list[tuple] | None = None,
+):
+    """
+    Recompute car costs for all edges or a specified subset.
+
+    Parameters
+    ----------
+    G : MultiDiGraph
+    edges : list of (u, v, k), optional
+        If None, recompute for all edges.
+        If provided, recompute only for these edges.
+    """
+    if edges is None:
+        edges = list(G.edges(keys=True))
+
+    for u, v, k in edges:
+        d = G[u][v][k]
+
+        base, fietsstraat = _compute_car_costs(
+            length_m=d["length"],
+            maxspeed_kph=d.get("speed_kph"),
+        )
+
+        d["car_cost_freeflow"] = base
+
+        # If edge has already been converted, use fietsstraat cost
+        if d.get("infra_type") == "fietsstraat":
+            d["car_cost_fietsstraat"] = fietsstraat
+        else:
+            d["car_cost_fietsstraat"] = base

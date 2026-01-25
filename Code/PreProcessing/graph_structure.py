@@ -61,6 +61,7 @@ def simplify_multidigraph_in_place(G):
             elif attr == "cycleway":
                 agg[attr] = tag_utils.select_primary_label(vals, tag_utils.CYCLEWAY_PRIORITY)
             elif attr == "safety":
+                #TODO ermmmmmm
                 agg[attr] = min(vals, key=lambda x: safety_to_risk_factor_map.get(x, 999))  # safest
             else:
                 agg[attr] = vals[0]

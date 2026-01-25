@@ -5,6 +5,7 @@ import numpy as np
 from constants import SafetyClass
 from . import tag_utils
 from shapely.geometry import LineString
+import constants
 
 
 #region road tags
@@ -92,6 +93,20 @@ def collapse_lanes_list(G):
     pass
 #endregion
 
+
+def add_max_speed(G):
+    G = ox.add_edge_speeds(G, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
+    
+    from collections import Counter
+
+    speeds = [d.get("speed_kph") for _, _, _, d in G.edges(keys=True, data=True) if d.get("speed_kph") is not None]
+    speed_counts = Counter(speeds)
+
+    for spd, cnt in sorted(speed_counts.items()):
+        print(f"{spd:>5} kph : {cnt}")
+
+    return G
+
 #TODO need to do a better job, example car_allowed and bike_allowed
 def standardise_edge_atr(G):
     for u, v, _, d in G.edges(keys=True, data=True):
@@ -161,9 +176,9 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         print(f"Iteration {it+1}: imputed {changed} nodes")
         if changed == 0:
             break
-
-    """    
+  
     #TODO idk why man :Sob:
+    """  
     print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
     full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
                       if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]

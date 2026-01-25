@@ -26,11 +26,12 @@ def draw_graph(G, ax=None, node_size=0, node_color="white", edge_color="black", 
 def plot_graph_by_edge_attr(
     G,
     attr: str | None = None,
-    cmap="viridis",
+    cmap="managua_r",
     num_bins=None,
     equal_size=False,
     na_color="#dddddd",
     norm=None,
+    normalize_colorbar=False,
     title=None,
     label = None,
 ):
@@ -53,8 +54,25 @@ def plot_graph_by_edge_attr(
     fig, ax = draw_graph(G, edge_color=edge_colors)
 
     # Colorbar
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap,)
+    if normalize_colorbar:
+        # Normalized colorbar (explicit or implicit)
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    else:
+        # Absolute colorbar: infer range directly from data
+        values = [
+            d.get(attr)
+            for _, _, _, d in G.edges(keys=True, data=True)
+            if d.get(attr) is not None
+        ]
+        sm = plt.cm.ScalarMappable(
+            norm=plt.Normalize(vmin=min(values), vmax=max(values)),
+            cmap=cmap,
+        )
+
     sm.set_array([])
+
+
+    # Colorbar
     cbar = fig.colorbar(sm, ax=ax, fraction=0.03, pad=0.01)
 
     if label:
