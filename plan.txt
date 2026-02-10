@@ -1,6 +1,0 @@
-# Heuristic implementation
-
-metrics: connectedness, directness or betweenness centrality
-- iteratively add / remove edges
-
-- components
