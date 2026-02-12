@@ -95,11 +95,27 @@ def collapse_lanes_list(G):
 
 
 def add_max_speed(G):
+    """
+    Add the following attributes the edges,
+    The original speed kph
+    and the current kph if there are any reallocations, this is initialised to the original kph.
+    """
+    #TODO use the road type as fallback instead
     G = ox.add_edge_speeds(G, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
+
+    for u, v, _, d in G.edges(keys=True, data=True):
+        #Renames 'speed_kph' to 'speed_kph_original'
+        d["speed_kph_original"] = d.get("speed_kph")
+        d["speed_kph_current"] = d["speed_kph_original"]
+
+        # remove old 'speed_kph' tag
+        if "lanes" in d:
+            del d["speed_kph"]
+
     
     from collections import Counter
 
-    speeds = [d.get("speed_kph") for _, _, _, d in G.edges(keys=True, data=True) if d.get("speed_kph") is not None]
+    speeds = [d.get("speed_kph_current") for _, _, _, d in G.edges(keys=True, data=True) if d.get("speed_kph_current") is not None]
     speed_counts = Counter(speeds)
 
     for spd, cnt in sorted(speed_counts.items()):

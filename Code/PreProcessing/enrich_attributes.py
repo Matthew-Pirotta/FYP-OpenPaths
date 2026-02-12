@@ -315,14 +315,14 @@ def _compute_car_costs(length_m: float, maxspeed_kph: float, fietsstraat_speed_k
     KMH_to_MS = 1000/3600
 
     # baseline
-    v_base = maxspeed_kph * KMH_to_MS
-    car_cost_base = length_m / v_base
+    v_current = maxspeed_kph * KMH_to_MS
+    car_cost_base = length_m / v_current
 
     # after fietsstraat
     v_fietsstraat = fietsstraat_speed_kmh * KMH_to_MS
-    car_cost_fietsstraat = length_m / v_fietsstraat
+    car_cost_if_fietsstraat = length_m / v_fietsstraat
 
-    return car_cost_base, car_cost_fietsstraat
+    return car_cost_base, car_cost_if_fietsstraat
 
 
 def update_car_costs(
@@ -345,15 +345,10 @@ def update_car_costs(
     for u, v, k in edges:
         d = G[u][v][k]
 
-        base, fietsstraat = _compute_car_costs(
+        current, fietsstraat = _compute_car_costs(
             length_m=d["length"],
-            maxspeed_kph=d.get("speed_kph"),
+            maxspeed_kph=d.get("speed_kph_current"),
         )
 
-        d["car_cost_freeflow"] = base
-
-        # If edge has already been converted, use fietsstraat cost
-        if d.get("infra_type") == "fietsstraat":
-            d["car_cost_fietsstraat"] = fietsstraat
-        else:
-            d["car_cost_fietsstraat"] = base
+        d["car_cost_current"] = current
+        d["car_cost_if_fietsstraat"] = fietsstraat

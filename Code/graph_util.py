@@ -85,14 +85,13 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
 
     #5.speed_kph
-    d["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
+    d["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
+    d["car_cost_current"] = d["car_cost_if_fietsstraat"]
 
     # 6. After conversion, edge should not be converted again
     d["reallocatable"] = False
 
     reallocated.append((u, v, k))
-
-
     
     # 7. Directionality preserved:
     # If reverse exists, classify it too (but do NOT create new synthetic edges)
@@ -104,7 +103,8 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         d_rev["bike_allowed"] = True
         d_rev["infra_type"] = "fietsstraat"
         d_rev["safety"] = SafetyClass.SAFE
-        d_rev["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
+        d_rev["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
+        d_rev["car_cost_current"] = d["car_cost_if_fietsstraat"]
         d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
@@ -121,7 +121,9 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         attrs["reallocatable"] = False
         attrs["infra_type"] = "fietsstraat"
         attrs["safety"] = SafetyClass.SAFE
-        attrs["speed_kph"] = constants.FIETSSTRAAT_SPEED_KMH
+        attrs["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
+        attrs["car_cost_current"] = d["car_cost_if_fietsstraat"]
+
         G.add_edge(v, u, **attrs)
 
         #If adding a new first edge then the key must be 0 
