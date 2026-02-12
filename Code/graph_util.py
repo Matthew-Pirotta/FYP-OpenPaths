@@ -3,8 +3,7 @@ import networkx as nx
 import osmnx as ox
 import copy
 import numpy as np
-from collections import Counter
-
+from collections import Counter, defaultdict
 
 import constants
 from constants import SafetyClass
@@ -44,6 +43,7 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     return G.edge_subgraph(edges).copy()
 #endregion
 
+#region reallocation
 def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     return True
     """Updates the reallocatable attribute in place"""
@@ -134,7 +134,7 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     
     return reallocated
 
-
+#endregion
 
 def summarise_road_type_stats(G:MultiDiGraph):
     highway_counts = Counter()
@@ -213,3 +213,98 @@ def recombine_subgraphs_into_master(
                 reallocate_edge(G_new, (u, v, k))
 
     return G_new
+
+#region segment logic
+# Applying steet segment level reallocation logic to formulation
+# u,v and v,u are combined
+def build_segment_arc_map(G:MultiDiGraph):
+    """
+    Groups directed edges into undirected segments.
+
+    :param G: A NetworkX MultiDiGraph.
+    :return: Dict mapping (min_node, max_node, key) to a list of (u, v, key) edges.
+    """
+    seg_to_arcs = defaultdict(list)
+
+    for u, v, k in G.edges(keys=True):
+        seg = (min(u, v), max(u, v), 0)
+        seg_to_arcs[seg].append((u, v, k))
+    return seg_to_arcs
+
+
+def build_segment_coef(G,G_sub_reallocatable, eligible_edges, paths_bike, paths_car, gamma: float):
+    """
+    Build per-edge objective coefficients for the solver. The benefit and harm of edges are summed into their segements, as the solver will reallocate them in one go.
+
+    coef[seg] = bike_benefit[e] - gamma * car_harm[e]
+
+    Parameters
+    ----------
+    G : MultiDiGraph
+        Authoritative graph (current state).
+    G_sub_reallocatable : MultiDiGraph
+        Sub graph which is filtered on teallocatable edges.
+    eligible_edges : set[(u,v,k)]
+        Edges allowed to be reallocated this iteration.
+    paths_bike : dict[(o,d,w) -> list[node]]
+        Current shortest bike paths.
+    paths_car : dict[(o,d,w) -> list[node]]
+        Current shortest car paths.
+    gamma : float
+        Weight of car harm relative to bike benefit.
+
+    Returns
+    -------
+    dict[(u,v,k) -> float]
+        Objective coefficient per eligible edge.
+    """
+
+    seg_to_arcs = build_segment_arc_map(G_sub_reallocatable)  
+    arc_to_seg = {arc: seg for seg, arcs in seg_to_arcs.items() for arc in arcs}
+
+
+    bike_benefit_seg = defaultdict(float)
+    car_harm_seg = defaultdict(float)
+
+
+    # --- Bike benefit aggregation ---
+    for (o, d, w), path in paths_bike.items():
+        for u, v in zip(path[:-1], path[1:]):
+            e = (u, v, 0)
+            seg = arc_to_seg.get(e)
+            if seg not in seg_to_arcs: 
+                continue
+ 
+            edge = G[u][v][0]
+            # Δb​(e)=bike cost before upgrade − bike cost after upgrade
+            delta_bike = (edge["bike_cost_penalty"] - edge["bike_cost_base"])
+            bike_benefit_seg[seg] += w * delta_bike
+
+    # --- Car harm aggregation ---
+    for (o, d, w), path in paths_car.items():
+        for u, v in zip(path[:-1], path[1:]):
+            e = (u, v, 0)
+            seg = arc_to_seg.get(e)
+            if seg not in seg_to_arcs: 
+                continue
+
+            edge = G[u][v][0]
+            # Δc​(e)=car cost after upgrade − car cost before upgrade
+            delta_car = (edge["car_cost_if_fietsstraat"] - edge["car_cost_current"])
+            car_harm_seg[seg] += w * delta_car
+
+    # --- Combine ---
+    """
+    If coef[e] > 0: upgrading is beneficial overall
+    If coef[e] < 0: car harm outweighs bike benefit
+    gamma controls how much you care about car harm relative to bike benefit
+    """
+    coef_seg = {}
+    for seg, arcs in seg_to_arcs.items():
+        # This explicitly calculates the balance for every eligible segment
+        benefit = bike_benefit_seg[seg]
+        harm = car_harm_seg[seg]
+        coef_seg[seg] = benefit - (gamma * harm)
+
+    return coef_seg, bike_benefit_seg, car_harm_seg
+#endregion
