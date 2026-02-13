@@ -8,7 +8,7 @@ import copy
 from Demand import paths_util
 import graph_util
 
-def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_cap_remaining:float):
+def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_remaining_frac:float, C0):
     """
     Solve a batch knapsack problem:
         max sum coef[e] * z_e
@@ -48,9 +48,21 @@ def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_cap
         name="budget_edges",
     )
 
+    # 1) Build normalized harm coefficient per segment
+    harm_coef_norm = {}
+    for seg in z:
+        harm_coef_norm[seg] = car_harm_seg[seg] / C0
+
+    # 2) Build LHS expression: total normalized harm from selected segments
+    total_harm_expr = gp.quicksum(
+        harm_coef_norm[seg] * z[seg]
+        for seg in z
+    )
+
+    # 3) Add the harm-budget constraint
     m.addConstr(
-        gp.quicksum(car_harm_seg[seg] * z[seg] for seg in z) <= harm_cap_remaining,
-        name="budget_car_harm"
+        total_harm_expr <= harm_remaining_frac,
+        name="budget_car_harm",
     )
 
     m.setObjective(
@@ -94,6 +106,8 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
         harm_remaining = max(0.0, Cmax - Ccurr)
         if harm_remaining <= 1e-9:
             break
+        #Scale harm_remaing between [0,1] as range was initially in the magnitudes and could cause numerical instability
+        harm_remaining_frac = max(0.0, (Cmax - Ccurr) / C0)
 
         
         # 2) build edge coefficients for eligible edges only
@@ -110,6 +124,7 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
             gamma=gamma,
         )
 
+        print("--------")
         print("eligible segs:", len(coef_seg))
         print("nonzero bike segs:", sum(abs(v) > 1e-12 for v in bike_benefit_seg.values()))
         print("nonzero car segs:", sum(abs(v) > 1e-12 for v in car_harm_seg.values()))
@@ -125,7 +140,8 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
         selected = solve_batch_knapsack(
             seg_coef=coef_seg,
             car_harm_seg=car_harm_seg,
-            harm_cap_remaining=harm_remaining,
+            harm_remaining_frac=harm_remaining_frac,
+            C0 = C0,
             batch_size=k,
         )
 
@@ -147,6 +163,25 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
             break
 
         remaining_budget -= applied
+
+        
+        # signed: + means worse for cars, - means better
+        harm_pct_signed = 100.0 * (Ccurr - C0) / C0 if C0 > 0 else 0.0
+
+        # "harm done" (non-negative only)
+        harm_abs = max(0.0, Ccurr - C0)
+        harm_pct = 100.0 * harm_abs / C0 if C0 > 0 else 0.0
+
+        # optional: how much of your allowed cap is used
+        cap_abs = max(1e-12, Cmax - C0)
+        cap_used_pct = 100.0 * harm_abs / cap_abs
+
+        print(
+            f"Car harm: {harm_pct:.2f}% "
+            f"(signed: {harm_pct_signed:+.2f}%), "
+            f"cap used: {cap_used_pct:.2f}%"
+        )
+        print("--------")
 
 
     return chosen_edges, G_master
