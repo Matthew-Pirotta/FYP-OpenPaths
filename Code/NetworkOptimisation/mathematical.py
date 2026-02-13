@@ -1,3 +1,10 @@
+"""
+Mathematical optimization routines for segment-level bike reallocation.
+
+This module runs an iterative, OD-aware optimization workflow that reallocates
+road segments to improve cycling utility while limiting harm to car travel cost.
+"""
+
 from collections import defaultdict
 from networkx import MultiDiGraph
 import gurobipy as gp
@@ -10,24 +17,41 @@ import graph_util
 
 def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_remaining_frac:float, C0):
     """
-    Solve a batch knapsack problem:
-        max sum coef[e] * z_e
-        s.t. sum z_e <= batch_size
-             z_e ∈ {0,1}
-                      
-    Stops when reaching a harm limit to the car network relative to the base network.
+    Solve one batch of segment selection as a binary knapsack-style MIP.
+
+    Objective:
+        maximize sum(seg_coef[seg] * z_seg)
+
+    Constraints:
+        1) Edge budget:   sum(z_seg) <= batch_size
+        2) Car-harm cap:  sum((car_harm_seg[seg] / C0) * z_seg) <= harm_remaining_frac
+        3) Binary vars:   z_seg in {0, 1}
+
+    Notes
+    -----
+    - Only segments with positive objective coefficient are considered as candidates.
+    - `car_harm_seg` is in absolute cost units; it is normalized by `C0` in the model.
+    - `harm_remaining_frac` is the remaining allowable car-harm increase as a fraction
+      of baseline car cost (e.g., 0.05 = 5% of baseline).
 
     Parameters
     ----------
-    seg_coef : dict[(u,v,k) -> float]
-        Objective coefficient per edge.
+    seg_coef : dict
+        Mapping {segment_id -> net utility score} for current batch.
+    car_harm_seg : dict
+        Mapping {segment_id -> estimated car-cost increase} in absolute units.
     batch_size : int
-        Maximum number of edges to select this iteration.
+        Maximum number of segments that may be selected in this batch.
+    harm_remaining_frac : float
+        Remaining harm budget as a fraction of baseline car cost.
+    C0 : float
+        Baseline total car cost used to normalize harm terms.
 
     Returns
     -------
-    list[(u,v,k)]
-        Selected edges.
+    list
+        Selected segment IDs (the keys used in `seg_coef`).
+        Returns [] if no positive candidates or no optimal solution is found.
     """
 
     # Filter edges with positive benefit only
@@ -81,9 +105,50 @@ def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_rem
 
 def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, car_harm_delta, gamma:float, G_sub = None):
     """
-        G_sub: Subgraph to be optimised, If NONE then whole G_master will be Optimised
-        car_harm_delta: how much percent is the car network allowed to get. e.g. 0.05. The car netork can get 5% worse
-    """ 
+    Iteratively reallocate road segments to improve bike utility under a car-harm cap.
+
+    Workflow per iteration
+    ----------------------
+    1) Compute current bike/car shortest paths for OD demand.
+    2) Compute current total car cost Ccurr and remaining harm budget:
+           Cmax = (1 + car_harm_delta) * C0
+           harm_remaining_frac = max(0, (Cmax - Ccurr) / C0)
+    3) Build segment-level coefficients and per-segment car harm.
+    4) Solve batched knapsack MIP.
+    5) Apply selected segments to `G_master` via representative directed arcs.
+
+    Stopping conditions
+    -------------------
+    - Total segment budget exhausted.
+    - Harm budget exhausted.
+    - No feasible/beneficial segment selected in a batch.
+
+    Parameters
+    ----------
+    G_master : networkx.MultiDiGraph
+        Main graph to optimize. Mutated in place by reallocation operations.
+    OD : iterable
+        Weighted OD demand as (origin_node, destination_node, weight).
+    batch_size : int
+        Maximum number of segments selected per batch iteration.
+    budget_total : int
+        Total maximum number of reallocations across all batches.
+    car_harm_delta : float
+        Allowed relative increase in total car cost vs baseline (e.g., 0.05 = +5%).
+    gamma : float
+        Tradeoff weight applied to car harm in segment utility:
+            coef = bike_benefit - gamma * car_harm
+    G_sub : networkx.MultiDiGraph, optional
+        Candidate subgraph restricting which edges/segments are eligible.
+        If None, a copy of `G_master` is used.
+
+    Returns
+    -------
+    tuple
+        (chosen_edges, G_master)
+        - chosen_edges: list of representative directed arcs actually reallocated.
+        - G_master: the updated graph (same object, modified in place).
+    """
     if G_sub is None:
         G_sub = copy.deepcopy(G_master)
 
