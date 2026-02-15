@@ -56,7 +56,7 @@ def clean_graph(G:MultiDiGraph, place_name):
     clean_input_data.ensure_edge_geometries(G)
 
     # simplify topology (may change geometries), then recompute accurate lengths
-    # graph_structure.simplify_multidigraph_in_place(G)
+    graph_structure.simplify_multidigraph_in_place(G)
 
     # ensures accurate 'length' in meters
     G = ox.project_graph(G)    

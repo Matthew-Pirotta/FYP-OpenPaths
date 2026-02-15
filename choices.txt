@@ -13,3 +13,47 @@ Centrality and Directness are calculated within the LCC; Szell et al. (2021) –
 - for the master graph we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
 
 - Osmnx by default represents the network as a MultiDigraph, where roads in the same direction but where separated where represented as two different edges. However I opted to convert the network to Digraph to only have 1 edge per direction, while still allowing for an edge in the other i.e 1 u->v and 1 v->u. This choice was made to simplify the optimisation problem. Also only a few roads were actually affected by this change.   
+
+
+----------
+Chocies Re. One large solve, or parallelized MILP
+For the mathematical solution:
+• Parallelized & Partitioned (Actual): 16 hours 35 minutes (using 5 cores and 62 partitions).
+• Sequential but Partitioned (Inferred): ~83 hours (solving the 62 parts one-by-one on 1 core).
+• Monolithic City-Wide Solve (Superlinear Estimate): Multiple months, 1,550 hours (64 days). 
+
+the math:
+Taking into account the superlinear runtime of the solver, a true monolithic solve of the entire city of Zurich (solving all 17,870 edges as a single mathematical instance) would shift the estimate from days to weeks or potentially months.
+The sources explain why the superlinear nature of the problem makes a single city-wide optimization "computationally prohibitive" compared to the partitioned approach used in the paper.
+1. The Superlinear Penalty of Scale
+The paper explicitly states that "solving the linear program requires superlinear runtime with respect to the number of variables". This means that if the size of the problem (the number of variables) increases, the time required to solve it grows at a much faster rate.
+• Variable Explosion: The total number of variables (ν) is calculated as 3⋅m⋅∣Ω∣+2⋅m, where m is the number of edges and ∣Ω∣ is the number of origin-destination paths.
+• Monolithic vs. Partitioned: In the Zurich case study, the city was broken into 62 smaller instances. Because the algorithm is superlinear, solving 62 small problems is mathematically much faster than solving one problem that is 62 times larger.
+2. Inferring the Monolithic Estimate
+We can compare the runtime of a single district to the whole city to see this superlinear effect:
+• District Scale: A large district like Cambridge MA (mid-east) has 1,253 lanes and 677 OD paths. A single optimization for this district takes 146 minutes (roughly 2.4 hours).
+• City Scale: Zurich has 17,870 edges and a massive city-wide OD matrix. This is roughly 14 times the size of the Cambridge district in terms of edges alone.
+• The Estimate:
+    ◦ In a linear world, one solve of Zurich would take 14×2.4 hours≈34 hours.
+    ◦ In a superlinear world (e.g., O(n2)), one solve would take 142×2.4 hours≈470 hours (nearly 20 days) for just a single optimization iteration.
+3. The Multiplier for the Pareto Frontier
+The process described in the paper is not a single solve but an iterative rounding scheme (Algorithm 1) that re-solves the LP every k iterations to maintain accuracy.
+• For the Cambridge district, computing the full Pareto frontier took 7.91 hours.
+• Applying the same superlinear scale (142) to the Pareto calculation for a monolithic Zurich solve results in 196×7.91 hours≈1,550 hours (64 days of continuous computing).
+
+
+
+--------
+Choices re. lane level Representation 
+
+1.somehow add lane level for main roads also in the heuristic algorithim. (idk if this is even possible, coding wise with my current implementation). Also keeping in mind that in the future i plan on doing a metaheuristic implementation, so it might make the gene coding, super different or infeasible, or maybe it would be possible to implement for both heuristic and metaheuristic. 
+
+or 
+
+2.Dont allow for lane level reallocation in the mathematical solver, to allow for a more fair comparison. 
+
+
+3. Allow for lane level reallocation in the mathematical solver, but not in the other heuristic/metaheruistc and compare them as is.
+
+CHOCIE: 3.
+Option 1 wold increase chromosone deimensonality and cause instability. Option 3 is the cleanest but be careful of how it is framed.

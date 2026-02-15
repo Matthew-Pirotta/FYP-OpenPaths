@@ -2,78 +2,151 @@ from networkx import MultiDiGraph
 import osmnx as ox
 import networkx as nx
 import numpy as np
+from collections import defaultdict
+import operator
+from statistics import fmean
 
-from  . import clean_input_data
-from  . import tag_utils
+from  . import clean_input_data, tag_utils, enrich_attributes
 
-def simplify_multidigraph_in_place(G):
-    """Merge same-direction parallel edges in a MultiDiGraph while keeping it a MultiDiGraph."""
-    merged_edges = []
+import constants
 
-    # Iterate over each directed node pair that has multiple edges
-    edges_to_process = list(G.edges())
-    for u, v in edges_to_process:
-        if not G.has_edge(u, v):
-            continue
+SIMPLIFY_SPEC = {
+    #mean
+    "length": fmean,
+    "grade": fmean,
+    "risk_factor": fmean,
+    "speed_kph_original": fmean,
+    "speed_kph_current": fmean,
 
-        data_dict = G[u][v]
-        if len(data_dict) <= 1:
-            continue  # only one edge → nothing to merge
+    #sum
+    "car_lanes": lambda vs: int(sum(vs)),
+    "bike_lanes": lambda vs: int(sum(vs)),
 
-        # gather all edge data
-        edges = list(data_dict.values())
+    #boolean
+    "car_allowed": any,
+    "bike_allowed": any,
 
-        agg = {}
+    #categorical, select through priority
+    "highway": lambda values: tag_utils.select_primary_label(values, tag_utils.HIGHWAY_PRIORITY),
+    "cycleway": lambda values: tag_utils.select_primary_label(values, tag_utils.CYCLEWAY_PRIORITY),
+    "safety": lambda values: min(values, key=lambda x: enrich_attributes.safety_to_risk_factor_map.get(x, float("inf"))), #TODO check if this is functional
 
-        # attributes to aggregate
-        numeric_attrs = ["length", "grade", "risk_factor", "width"]#TODO risk_factor correct group?
-        summed_attrs  = ["car_lanes", "bike_lanes"]
-        bool_attrs    = ["car_allowed", "bike_allowed"]
-        categorical_attrs = ["highway", "safety", "cycleway", "region", "geometry"] 
+    #misc
+    "region": lambda vs: list(set(vs)), #TODO no this shoud now be a list of regions. we are no longer restricting to single region. The agg shoukd be the union
+    "geometry": operator.itemgetter(0),
+}
 
-        # average numeric values
-        for attr in numeric_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
-            if vals:
-                agg[attr] = float(np.mean(vals))
+SEGMENT_SPEC = {
+    "car_lanes": lambda vs: int(sum(vs)),
+    "length": max,
+    "bike_cost_base": fmean,
+    "bike_cost_penalty": fmean,
+}
 
-        # sum lane counts
-        for attr in summed_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) is not None]
-            if vals:
-                agg[attr] = int(np.sum(vals))
+SIMPLIFY_AND_SEGMENT_SPEC = {**SIMPLIFY_SPEC,**SEGMENT_SPEC}
 
-        # boolean OR
-        for attr in bool_attrs:
-            agg[attr] = any(d.get(attr, False) for d in edges)
+def aggregate_by_key(rows, spec, defaults=None):
+    """
+    spec: dict[key -> reducer(list_of_values)]
+    defaults: dict[key -> default_value]
+    """
+    defaults = defaults or {}
+    out = {}
 
-        # pick most bike-friendly safety class if available
-        #Categorical 
-        for attr in categorical_attrs:
-            vals = [d.get(attr) for d in edges if d.get(attr) not in (None, "", np.nan)]
+    for key, reducer in spec.items():
+        #print(f"key:{key}, reducer{reducer}")
+        vals = [r[key] for r in rows if key in r and r[key] is not None]
+        if vals:
+            out[key] = reducer(vals)
+        elif key in defaults:
+            out[key] = defaults[key]
 
-            if not vals:
-                agg[attr] = None
+    return out
+
+
+#region MultdiGraph -> Digraph
+def simplify_multidigraph_in_place(G: MultiDiGraph) -> MultiDiGraph:
+    """Merge same-direction parallel edges in a MultiDiGraph, in place."""
+    merge_jobs = []
+
+    # Snapshot jobs first, then mutate graph
+    for u, nbrs in list(G.adj.items()):
+        for v, key_dict in list(nbrs.items()):
+            if len(key_dict) <= 1:
                 continue
 
-            if attr == "highway":
-                agg[attr] = tag_utils.select_primary_label(vals, tag_utils.HIGHWAY_PRIORITY)
-            elif attr == "cycleway":
-                agg[attr] = tag_utils.select_primary_label(vals, tag_utils.CYCLEWAY_PRIORITY)
-            elif attr == "safety":
-                #TODO ermmmmmm
-                agg[attr] = min(vals, key=lambda x: safety_to_risk_factor_map.get(x, 999))  # safest
-            else:
-                agg[attr] = vals[0]
+            keys = list(key_dict.keys())
+            rows = [dict(d) for d in key_dict.values()]
+            merge_jobs.append((u, v, keys, rows))
 
-        merged_edges.append((u, v, agg))
+    for u, v, keys, rows in merge_jobs:
+        # Keep first edge attrs as base so unlisted attrs are not lost
+        merged_attrs = dict(rows[0])
+        agg_attrs = aggregate_by_key(rows, SIMPLIFY_SPEC)
+        merged_attrs.update(agg_attrs)
 
-        # remove the old parallel edges
-        for key in list(data_dict.keys()):
-            G.remove_edge(u, v, key)
+        for k in keys:
+            if G.has_edge(u, v, k):
+                G.remove_edge(u, v, k)
 
-    # add back one merged edge per direction
-    for u, v, attrs in merged_edges:
-        G.add_edge(u, v, **attrs)
+        G.add_edge(u, v, **merged_attrs)
 
     return G
+#endregion
+
+#region Digraph -> undirected graph
+#NOTE that all features are calculatedo n the digraph and are then aggregated oto the undirected graph.
+def _segment_id(u, v, k = 0):
+    """Canonical undirected segment id used across preprocessing and optimization."""
+    return (min(u, v), max(u, v), k)
+
+
+#TODO move to a different class, or move the class
+def build_segment_graph(G: MultiDiGraph):
+    """
+    Build segment maps + undirected segment graph from a clean directed graph.
+
+    Returns
+    -------
+    tuple
+        (seg_to_arcs, arc_to_seg, G_seg)
+    """
+    seg_rows = defaultdict(list)
+    seg_to_arcs = defaultdict(list)
+    arc_to_seg = {}
+
+    for u, v, k, d in G.edges(keys=True, data=True):
+        seg = _segment_id(u, v, k)
+        arc = (u, v, k)
+
+        seg_rows[seg].append(d)
+        seg_to_arcs[seg].append(arc)
+        arc_to_seg[arc] = seg
+
+    G_seg = nx.MultiGraph()
+    G_seg.graph.update(dict(G.graph)) #graph level attr such as crs
+    G_seg.add_nodes_from((n, dict(d)) for n, d in G.nodes(data=True))  # keeps x/y and other node attrs
+
+    for seg, rows in seg_rows.items():
+        #print(f"seg:{seg}, rows{rows}")
+        agg = aggregate_by_key(rows, SIMPLIFY_AND_SEGMENT_SPEC) #Need to reaggrigrate the orignal attributes such a lanes
+        a, b, k = seg
+
+        G_seg.add_edge(
+            a,
+            b,
+            key=k,  # always 0
+            seg=seg,
+            arcs=list(seg_to_arcs[seg]),
+            n_arcs=len(rows),
+            **agg
+        )
+
+    seg_to_arcs = dict(seg_to_arcs)
+    arc_to_seg = dict(arc_to_seg)
+
+    G_seg.graph["seg_to_arcs"] = seg_to_arcs
+    G_seg.graph["arc_to_seg"] = arc_to_seg
+
+    return seg_to_arcs, arc_to_seg, G_seg
+#endregion
