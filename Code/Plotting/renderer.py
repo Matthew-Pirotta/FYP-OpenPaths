@@ -3,22 +3,43 @@ import osmnx as ox
 
 _DEFAULT_FIGSIZE = (12, 12)
 
-def draw_graph(G, ax=None, node_size=0, node_color="white", edge_color="black", edge_linewidth=0.5, bgcolor="white", figsize=None):
+from typing import TypedDict, Unpack
+
+class PlotSettings(TypedDict, total=False):
+    """Schema for graph plotting parameters."""
+    node_size: int
+    node_color: str
+    edge_linewidth: float
+    fig_size: tuple[int, int]
+    bgcolor: str
+    alpha: float
+    edge_color: str
+
+DEFAULTS: PlotSettings = {
+    "node_size": 0,
+    "node_color": "black",
+    "edge_linewidth": 0.5,
+    "bgcolor": "white",
+    "edge_color": "black"
+}
+
+def draw_graph(G, ax=None, **kwargs: PlotSettings):
+    # The | operator merges dicts. kwargs overrides DEFAULTS.
+    settings: dict = DEFAULTS | kwargs
+    # Pull out the one thing that doesn't go into plot_graph
+    fig_size = settings.pop("fig_size", _DEFAULT_FIGSIZE)
+
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize or _DEFAULT_FIGSIZE)
+        fig, ax = plt.subplots(figsize=fig_size)
     else:
         fig = ax.figure 
 
     ox.plot_graph(
         G,
         ax=ax,
-        node_size=node_size,
-        node_color=node_color,
-        edge_color=edge_color,
-        edge_linewidth=edge_linewidth,
-        bgcolor=bgcolor,
         show=False,
         close=False,
+        **settings,
     )
     return fig, ax
 
@@ -34,6 +55,7 @@ def plot_graph_by_edge_attr(
     normalize_colorbar=False,
     title=None,
     label = None,
+    **kwargs: Unpack[PlotSettings]
 ):
     """
     Generic edge-attribute map plot.
@@ -42,33 +64,41 @@ def plot_graph_by_edge_attr(
     Otherwise, OSMnx automatic normalization is used.
     """
 
-    edge_colors = ox.plot.get_edge_colors_by_attr(
-        G,
-        attr=attr,
-        cmap=cmap,
-        num_bins=num_bins,
-        equal_size=equal_size,
-        na_color=na_color,
-    )
+    cmap_obj = plt.get_cmap(cmap)
+    values = [
+        d.get(attr)
+        for _, _, _, d in G.edges(keys=True, data=True)
+        if d.get(attr) is not None
+    ]
 
-    fig, ax = draw_graph(G, edge_color=edge_colors)
-
-    # Colorbar
-    if normalize_colorbar:
-        # Normalized colorbar (explicit or implicit)
-        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    else:
-        # Absolute colorbar: infer range directly from data
-        values = [
-            d.get(attr)
+    if norm is not None:
+        # Apply fixed/manual normalization directly to edges.
+        edge_colors = [
+            na_color if d.get(attr) is None else cmap_obj(norm(d.get(attr)))
             for _, _, _, d in G.edges(keys=True, data=True)
-            if d.get(attr) is not None
         ]
-        sm = plt.cm.ScalarMappable(
-            norm=plt.Normalize(vmin=min(values), vmax=max(values)),
-            cmap=cmap,
+    else:
+        edge_colors = ox.plot.get_edge_colors_by_attr(
+            G,
+            attr=attr,
+            cmap=cmap_obj,
+            num_bins=num_bins,
+            equal_size=equal_size,
+            na_color=na_color,
         )
 
+    fig, ax = draw_graph(G, edge_color=edge_colors, **kwargs)
+
+    if norm is not None:
+        cbar_norm = norm
+    elif normalize_colorbar:
+        cbar_norm = plt.Normalize(vmin=0, vmax=1)
+    elif values:
+        cbar_norm = plt.Normalize(vmin=min(values), vmax=max(values))
+    else:
+        cbar_norm = plt.Normalize(vmin=0, vmax=1)
+
+    sm = plt.cm.ScalarMappable(norm=cbar_norm, cmap=cmap_obj)
     sm.set_array([])
 
 
