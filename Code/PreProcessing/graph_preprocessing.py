@@ -16,13 +16,13 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
 
         # tag drive edges
         for u, v, k, d in G_drive.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v):
+            if not G_master.has_edge(u,v, k):
                 continue
             G_master[u][v][k]["car_allowed"] = True
         
         # tag bike edges
         for u, v, k, d in G_bike.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v):
+            if not G_master.has_edge(u,v, k):
                 continue
             G_master[u][v][k]["bike_allowed"] = True
 
@@ -30,12 +30,13 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
 
 def load_network(location) -> MultiDiGraph:
         print(f"Loading OSM networks for {location}...")
-        G_bike = ox.graph_from_place(location, network_type="bike", simplify=True, retain_all=True)
+        G_bike = ox.graph_from_place(location, network_type="bike", simplify=True, retain_all=False)
         nx.set_edge_attributes(G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
         #TODO should be drive_service?
-        G_drive = ox.graph_from_place(location, network_type="drive", simplify=True, retain_all=True)
+        G_drive = ox.graph_from_place(location, network_type="drive", simplify=True, retain_all=False)
+        G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         nx.set_edge_attributes(G_drive,True,"car_allowed")
         #TODO edge attributes code is being dupplicated in the __create_master graph. Also didnt set False values:
 

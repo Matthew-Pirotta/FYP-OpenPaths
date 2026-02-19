@@ -125,27 +125,38 @@ def add_max_speed(G):
 
 #TODO need to do a better job, example car_allowed and bike_allowed
 def standardise_edge_atr(G):
+
+    #NOTE unfortunatly some streets are not tagged with a lane count, these are assumed to be single lanes
+    def clean_lanes(unclean_lane):
+        # Normalize to a single numeric value
+        if isinstance(unclean_lane, list):
+            # Summing list elements: e.g., ['2', '1'] becomes 3
+            unclean_lane = sum(int(x) for x in unclean_lane if str(x).isdigit())
+        elif isinstance(unclean_lane, str):
+            # simple case: "2"
+            unclean_lane = int(unclean_lane) if unclean_lane.isdigit() else 1
+
+        return unclean_lane
+
     for u, v, _, d in G.edges(keys=True, data=True):
 
         #Renames 'lanes' to 'car_lanes, and set to 1 as default
-        lanes_val = d.get("lanes", 1)
-        # Normalize to a single numeric value
-        if isinstance(lanes_val, list):
-            # sometimes it's ['2', '3']; assume these are all separate lanes
-            #print(f"edge {u}->{v} has lanes as a list")
-            #print(f"{d}")
-            lanes_val = sum(int(x) for x in lanes_val if str(x).isdigit())
-        elif isinstance(lanes_val, str):
-            # simple case: "2"
-            lanes_val = int(lanes_val) if lanes_val.isdigit() else 1
+        car_lanes = 1
+        if d.get("car_allowed", False):
+            car_lanes = d.get("lanes", 1)
+            car_lanes = clean_lanes(car_lanes)
+        d["car_lanes"] = car_lanes
 
-        d["car_lanes"] = int(lanes_val)
+        bike_lanes = 1
+        if d.get("bike_allowed", False):
+            bike_lanes = d.get("lanes", 1)
+            bike_lanes = clean_lanes(bike_lanes)
+        d["bike_lanes"] = bike_lanes
+        #TODO IDK d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
 
         # remove old 'lanes' tag
         if "lanes" in d:
             del d["lanes"]
-
-        d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
 
 def ensure_edge_geometries(G:MultiDiGraph):
     for u, v, k, d in G.edges(keys=True, data=True):
@@ -194,7 +205,6 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
             break
   
     #TODO idk why man :Sob:
-    """  
     print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
     full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
                       if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]
@@ -205,7 +215,7 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
                 print(f"NOde{node} elevation is problematic :/")
                 data["elevation"] = float(median_elevation)
 
-    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))"""
+    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
 
     #Recalculate grades and clamp to reasonable values
     G = ox.elevation.add_edge_grades(G, add_absolute=True)
