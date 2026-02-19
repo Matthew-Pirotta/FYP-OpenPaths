@@ -43,7 +43,9 @@ SEGMENT_SPEC = {
     "bike_cost_penalty": fmean,
 }
 
-SIMPLIFY_AND_SEGMENT_SPEC = {**SIMPLIFY_SPEC,**SEGMENT_SPEC}
+#NOTE technically the grade value shouldnt be in the segments, and is not actually meaningful in this context.
+#To remedy this create seperate dicts for shared attrbiutes and ones specific for simplify_multidigraph_in_place
+SIMPLIFY_AND_SEGMENT_SPEC = {**SIMPLIFY_SPEC,**SEGMENT_SPEC} 
 
 def aggregate_by_key(rows, spec, defaults=None):
     """

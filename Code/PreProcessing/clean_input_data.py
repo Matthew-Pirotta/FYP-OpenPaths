@@ -100,8 +100,18 @@ def add_max_speed(G):
     The original speed kph
     and the current kph if there are any reallocations, this is initialised to the original kph.
     """
+
+    hwy_speeds:dict[str,int] = {
+        "trunk": 70,         # Fastest: Major arterial / high-capacity road
+        "primary": 60,       # Main city connectors
+        "secondary": 60,     # Main local routes
+        "tertiary": 50,      # Collector roads between neighborhoods
+        "residential": 30,   # Local neighborhood streets
+        "service": 30,       # Alleyways, parking lot access, etc.
+    }
+
     #TODO use the road type as fallback instead
-    G = ox.add_edge_speeds(G, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
+    G = ox.add_edge_speeds(G, hwy_speeds=hwy_speeds, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
 
     for u, v, _, d in G.edges(keys=True, data=True):
         #Renames 'speed_kph' to 'speed_kph_original'

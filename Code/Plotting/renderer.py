@@ -81,7 +81,7 @@ def plot_graph_by_edge_attr(
         edge_colors = ox.plot.get_edge_colors_by_attr(
             G,
             attr=attr,
-            cmap=cmap_obj,
+            cmap=cmap,
             num_bins=num_bins,
             equal_size=equal_size,
             na_color=na_color,

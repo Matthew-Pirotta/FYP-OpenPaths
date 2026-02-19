@@ -1,36 +1,57 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from constants import SafetyClass
-from Plotting.renderer import draw_graph
+from Plotting.renderer import draw_graph, PlotSettings
+from typing import Unpack
 
-
-def plot_safety(G):
-    safety_colors = {
-        SafetyClass.VERY_SAFE: "magenta",
-        SafetyClass.SAFE: "green",
-        SafetyClass.MODERATE: "orange",
-        SafetyClass.CAUTION: "red",
-        SafetyClass.DANGEROUS: "darkred",
-        SafetyClass.UNCLASSIFIED: "gray",
-    }
-
+def plot_categorical_attr(
+    G,
+    attr: str,
+    mapping: dict,
+    default_color: str = "gray",
+    title: str | None = None,
+    legend_title: str | None = None,
+    **kwargs: Unpack[PlotSettings]
+):
+    """
+    Generalized plotter for categorical edge attributes.
+    
+    :param G: The graph.
+    :param attr: The edge attribute key (e.g., "safety" or "highway").
+    :param mapping: Dict mapping attribute values to colors.
+    :param default_color: Color to use if attribute is missing or not in mapping.
+    :param title: Plot title.
+    :param legend_title: Title for the color legend.
+    :param kwargs: Visual settings passed to draw_graph (node_size, fig_size, etc.).
+    """
+    
+    # 1. Generate edge colors based on the mapping
     edge_colors = [
-        safety_colors.get(d.get("safety"), "gray")
+        mapping.get(d.get(attr), default_color)
         for _, _, d in G.edges(data=True)
     ]
 
-    fig, ax = draw_graph(G, edge_color=edge_colors)
+    # 2. Use our existing draw_graph helper
+    fig, ax = draw_graph(G, edge_color=edge_colors, **kwargs)
 
-    legend = [
+    # 3. Build the Legend
+    legend_elements = [
         mpatches.Patch(
-            color=color,
-            label=cls.name.replace("_", " ").title()
+            color=color, 
+            label=str(val).replace("_", " ").title() if hasattr(val, 'name') else str(val).title()
         )
-        for cls, color in safety_colors.items()
+        for val, color in mapping.items()
     ]
-    ax.legend(handles=legend, title="Road Safety Classification")
+    
+    ax.legend(
+        handles=legend_elements, 
+        title=legend_title or attr.replace("_", " ").title(),
+        loc="best"
+    )
 
-    ax.set_title("Road Safety Classification")
+    if title:
+        ax.set_title(title)
+        
     ax.axis("off")
     fig.tight_layout()
     plt.show()

@@ -3,6 +3,7 @@
 - In reality is G_bike even doing anything? Like is it actually helping ppl reach places?
 - reallocatable logic is still in code
 - move all constants to the cosntants script
+- SNMAN for simplifying the street network?
 
 ----
 - Get some consensus of how much ppl prefer detour for safety over risky direct.
@@ -29,3 +30,8 @@ OLD questions:
 - if bi directional cycle lane takes 1 car lane, how much for protected lined with trees?
 - normalise road length so that it dominates less?
 - is it worth expanding the current maltese bike network if its inefficient?
+
+
+------
+Future Research
+- Use satelite immagry to map which roads have parking?
