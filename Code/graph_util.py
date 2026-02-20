@@ -109,26 +109,6 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
 
-    else: #create edge for cyclists if it doesn't exist
-        attrs = d.copy()
-        attrs["bike_allowed"] = True
-        attrs["car_allowed"] = False  # no car traffic on this synthetic link
-        attrs["bike_lanes"] = 0
-        attrs["car_lanes"] = 0
-        attrs["geometry"] = d["geometry"].reverse() #road shape
-        attrs["grade"] = -d["grade"]
-        attrs["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
-        attrs["reallocatable"] = False
-        attrs["infra_type"] = "fietsstraat"
-        attrs["safety"] = SafetyClass.SAFE
-        attrs["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
-        attrs["car_cost_current"] = d["car_cost_if_fietsstraat"]
-
-        G.add_edge(v, u, **attrs)
-
-        #If adding a new first edge then the key must be 0 
-        reallocated.append((v, u, 0))
-
     enrich_attributes.update_bike_costs(G, reallocated)
 
     

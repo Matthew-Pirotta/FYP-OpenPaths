@@ -6,6 +6,7 @@ import numpy as np
 from . import clean_input_data
 from . import enrich_attributes
 from . import graph_structure
+import graph_util
 
 def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
@@ -44,6 +45,9 @@ def load_network(location) -> MultiDiGraph:
 
         return G_master
 
+
+
+
 def clean_graph(G:MultiDiGraph, place_name):
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
 
@@ -55,10 +59,10 @@ def clean_graph(G:MultiDiGraph, place_name):
     G = clean_input_data.add_max_speed(G)
     clean_input_data.standardise_edge_atr(G)
     clean_input_data.ensure_edge_geometries(G)
-
+    clean_input_data.ensure_bidirectional_bike(G)
     # simplify topology (may change geometries), then recompute accurate lengths
     graph_structure.simplify_multidigraph_in_place(G)
-
+    
     # ensures accurate 'length' in meters
     G = ox.project_graph(G)    
     G = ox.distance.add_edge_lengths(G)
