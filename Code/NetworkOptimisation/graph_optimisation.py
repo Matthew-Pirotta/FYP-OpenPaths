@@ -57,7 +57,7 @@ def run_locality_task(args):
             print("No more valid edges left to reallocate")
             break
 
-        reallocated_edges = graph_util.reallocate_edge(G_working, edge_to_reallocate)
+        reallocated_edges = graph_util.reallocate_edge_to_fietsstraat(G_working, edge_to_reallocate)
         for reallocated_edge in reallocated_edges:
             diff_log.append({"edge":reallocated_edge})
 

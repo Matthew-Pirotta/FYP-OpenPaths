@@ -184,12 +184,7 @@ def heuristic_edge_closeness_centrality(
     print("Selected edge:", best_edge, "score:", edge_scores[best_edge])
     return best_edge
 
-def heuristic_random(
-    G_master: MultiDiGraph,
-    G_drive: MultiDiGraph,
-    G_bikeable: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    G_protected:MultiDiGraph,) -> tuple:
+def heuristic_random(G_master: MultiDiGraph, G_drive: MultiDiGraph, G_bikeable: MultiDiGraph, G_realloc: MultiDiGraph, G_protected:MultiDiGraph,) -> tuple:
     #TODO set seed?
 
     edges = list(G_realloc.edges)

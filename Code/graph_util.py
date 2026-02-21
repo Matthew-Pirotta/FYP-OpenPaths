@@ -62,7 +62,7 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     # Choose strong or weak connectivity depending on road model
     return stays_connected
 
-def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
+def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     """Convert an edge into a fietsstraat (bike-priority street).
     #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
     u, v, k = edge_id
@@ -109,10 +109,79 @@ def reallocate_edge(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
 
+    #TODO
     enrich_attributes.update_bike_costs(G, reallocated)
 
     
     return reallocated
+
+#TODO this is all useless idk
+def reallocate_edge_dedicated(
+    G: MultiDiGraph,
+    edge_id: tuple,
+) -> list[tuple]:
+    """
+    Convert a street segment to have a dedicated bike lane.
+
+    Parameters
+    ----------
+    G : MultiDiGraph
+    edge_id : (u, v, k)
+        Representative directed arc for the segment being converted.
+    
+    Returns
+    -------
+    list of (u, v, k)
+        Arcs that were modified/created and should have bike costs recomputed
+    """
+
+    #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
+    u, v, k = edge_id
+    #print(f"edge_id: {edge_id}")
+    d = G[u][v][k]
+    reallocated = []
+
+    # 1. Cars still allowed but as guests
+    d["car_allowed"] = True
+    
+    # 2. Bikes explicitly allowed
+    d["bike_allowed"] = True
+    
+    # 3. Fietsstraat classification
+    d["infra_type"] = "dedicated_bike_lane"
+    d["bike_lanes"] = d.get("bike_lanes") + 1
+
+    # 4. Set safety level appropriate to fietsstraat
+    d["safety"] = SafetyClass.VERY_SAFE
+    d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE])
+
+    # 6. After conversion, edge should not be converted again
+    d["reallocatable"] = False
+
+    reallocated.append((u, v, k))
+    
+    # 7. Directionality preserved:
+    # If reverse exists, classify it too
+    if G.has_edge(v, u):
+        #TODO this 0 indexing could be a problem depending on if i keep the multi digraph
+        rev_key = next(iter(G[v][u].keys()))
+        d_rev = G[v][u][rev_key]
+        d_rev["car_allowed"] = True
+        d_rev["bike_allowed"] = True
+        d_rev["infra_type"] = "dedicated_bike_lane"
+        d_rev["bike_lanes"] = d_rev.get("bike_lanes") + 1
+
+        d_rev["safety"] = SafetyClass.VERY_SAFE
+        d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE])
+        d_rev["reallocatable"] = False
+        reallocated.append((v, u, rev_key))
+
+    #TODO
+    enrich_attributes.update_bike_costs(G, reallocated)
+
+    
+    return reallocated
+
 
 #endregion
 
@@ -190,7 +259,7 @@ def recombine_subgraphs_into_master(
             if is_reallocated(d_sub) and not is_reallocated(d_master):
                 # Apply reallocation in master
                 # IMPORTANT: call the same canonical logic
-                reallocate_edge(G_new, (u, v, k))
+                reallocate_edge_to_fietsstraat(G_new, (u, v, k))
 
     return G_new
 

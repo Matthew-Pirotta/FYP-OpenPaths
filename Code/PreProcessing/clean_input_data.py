@@ -215,6 +215,7 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
             break
   
     #TODO idk why man :Sob:
+    """    
     print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
     full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
                       if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]
@@ -225,7 +226,7 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
                 print(f"NOde{node} elevation is problematic :/")
                 data["elevation"] = float(median_elevation)
 
-    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
+    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))"""
 
     #Recalculate grades and clamp to reasonable values
     G = ox.elevation.add_edge_grades(G, add_absolute=True)
@@ -236,3 +237,47 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
 
     return G
 #endregion
+
+
+def ensure_bidirectional_bike(G_drive: MultiDiGraph):
+    """
+    Create a synthetic edge for bikes allowing for bidrectional flow
+    """
+
+    #NOTE This is not creating artifical lanes because the lane counts are set to 0
+    # Wiedmann did not have this issue as their ground source thruth was an undirected graph, and created a directed graph from there
+    new_edges = []
+    reallocated = []
+
+    for u, v, _, d in G_drive.edges(keys=True, data=True):
+        # Only process if it's the reverse doesn't exist
+        if not G_drive.has_edge(v, u):
+            attrs = d.copy()
+            attrs["bike_allowed"] = d.get("bike_allowed")
+            attrs["car_allowed"] = False  # no car traffic on this synthetic link
+            attrs["bike_lanes"] = 0
+            attrs["car_lanes"] = 0
+            
+            attrs["geometry"] = d["geometry"].reverse()
+            attrs["grade"] = -d["grade"]
+            
+            # Set specific bike-safety attributes
+            attrs["risk_factor"] = d.get("risk_factor")
+            attrs["reallocatable"] = False
+            attrs["infra_type"] = d.get("infra_type")
+            attrs["safety"] =  d.get("safety")
+            attrs["speed_kph_current"] = d.get("speed_kph_current")
+            
+            # Map cost logic
+            attrs["car_cost_current"] = d.get("car_cost_if_fietsstraat", 0)
+
+            # Store to add after iteration to avoid 'dictionary changed size during iteration'
+            new_edges.append((v, u, attrs))
+
+    # Add the newly created edges to the Graph
+    for v, u, attrs in new_edges:
+        G_drive.add_edge(v, u, **attrs)
+        # If adding a new first edge in that direction, the key is 0
+        reallocated.append((v, u, 0))
+
+    return reallocated
