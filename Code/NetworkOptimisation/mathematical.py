@@ -10,7 +10,7 @@ from networkx import MultiDiGraph
 import gurobipy as gp
 from gurobipy import GRB
 import copy
-
+from typing import Optional
 
 from Demand import paths_util
 import graph_util

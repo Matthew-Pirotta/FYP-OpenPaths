@@ -1,3 +1,6 @@
+#TODO cleanup class by seperating codings constants and config constants
+
+
 from enum import StrEnum, auto
 
 class SafetyClass(StrEnum):
@@ -36,3 +39,8 @@ HWY_COLORS = {
 
 FIETSSTRAAT_SPEED_KMH = 30.0
 DEFUALT_MAXIUM_SPEED_KMH = 60.0 #Maltese highway code for built up areas
+
+
+Arc = tuple[int, int, int]
+Seg = tuple[int, int, int] 
+OD = tuple[int, int, float]

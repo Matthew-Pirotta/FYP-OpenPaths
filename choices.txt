@@ -57,3 +57,6 @@ or
 
 CHOCIE: 3.
 Option 1 wold increase chromosone deimensonality and cause instability. Option 3 is the cleanest but be careful of how it is framed.
+--------
+
+#NOTE Use G_seg (undirected segment graph) for corridor expansion because it approximates “nearby streets” without directionality headaches

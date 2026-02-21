@@ -1,3 +1,7 @@
+import networkx as nx
+from networkx import MultiDiGraph
+import constants
+
 # region bike costs
 
 def _compute_bike_costs_from_grade(
@@ -71,7 +75,7 @@ def update_bike_costs(
         d["bike_cost_penalty"] = penalty
 
 # region car cost
-def _compute_car_costs(length_m: float, maxspeed_kph: float, fietsstraat_speed_kmh: float = FIETSSTRAAT_SPEED_KMH):
+def _compute_car_costs(length_m: float, maxspeed_kph: float, fietsstraat_speed_kmh: float = constants.FIETSSTRAAT_SPEED_KMH):
     KMH_to_MS = 1000/3600
 
     # baseline
