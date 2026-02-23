@@ -10,7 +10,7 @@ from networkx import MultiDiGraph
 import gurobipy as gp
 from gurobipy import GRB
 import copy
-from typing import Optional
+from typing import Optional, Callable
 
 from Demand import paths_util
 import graph_util
@@ -254,16 +254,17 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
 Arc = tuple
 Seg = tuple
 ODPair = tuple[int, int, float]
+OD = list[ODPair]
 
 
 def solve_flow_lp(
     G: MultiDiGraph,
-    OD: list[ODPair],
+    OD: OD,
     seg_to_arcs: dict[Seg, list[Arc]],
     Lambda_seg: dict[Seg, float],
     eligible_bike_arcs: set[Arc],
-    fixed_bike_1: set[Arc],
-    fixed_bike_0: set[Arc],
+    fixed_bike_1: set[Arc], #arcs fixed to have a bike lane
+    fixed_bike_0: set[Arc], #arcs fixed to have no bike lane (optional)
     gamma: float,
     *,
     alpha_bike_space: float = 0.5,
@@ -559,3 +560,138 @@ def solve_flow_lp(
     obj_val = float(m.ObjVal)
 
     return lambda_c, lambda_b, f_c, f_b, f_beta, obj_val
+
+
+def round_lp_solution_segment_aware(
+    G,
+    OD_list: list[OD],
+    seg_to_arcs: dict[Seg, list[Arc]],
+    arc_to_seg: dict[Arc, Seg],
+    Lambda_seg: dict[Seg, float],
+    eligible_bike_arcs: set[Arc],
+    *,
+    solve_flow_lp_fn: Callable,
+    gamma: float,
+    k_fix: int,
+    budget_bike_lanes: int,
+    fix_both_directions: bool = False,  # if True, attempt to fix both arcs in a segment
+    fixed_bike_1_init: Optional[set[Arc]] = None,  #arcs fixed to have a bike lane
+    fixed_bike_0_init: Optional[set[Arc]] = None,  #arcs fixed to have no bike lane (optional)
+    alpha_bike_space: float = 0.5,
+    od_allowed_arcs: Optional[dict[int, set[Arc]]] = None,
+    car_cost_attr: str = "car_cost_current",
+    bike_shared_cost_attr: str = "bike_cost_shared",
+    bike_dedicated_cost_attr: str = "bike_cost_dedicated",
+    min_lambda_to_consider: float = 1e-6,
+    verbose: bool = True,
+):
+    fixed_bike_1: set[Arc] = set(fixed_bike_1_init or set())
+    fixed_bike_0: set[Arc] = set(fixed_bike_0_init or set())
+    history = []
+    rounds = 0
+
+    def arc_benefit(a: Arc) -> float:
+        u, v, k = a
+        d = G[u][v][k]
+        t_beta = float(d.get(bike_shared_cost_attr, d.get("bike_cost_penalty", 0.0)))
+        t_b = float(d.get(bike_dedicated_cost_attr, t_beta))
+        return max(0.0, t_beta - t_b)
+
+    while len(fixed_bike_1) < budget_bike_lanes:
+        rounds += 1
+
+        lambda_c, lambda_b, f_c, f_b, f_beta, obj = solve_flow_lp_fn(
+            G=G,
+            OD=OD_list,
+            seg_to_arcs=seg_to_arcs,
+            Lambda_seg=Lambda_seg,
+            eligible_bike_arcs=eligible_bike_arcs,
+            fixed_bike_1=fixed_bike_1,
+            fixed_bike_0=fixed_bike_0,
+            gamma=gamma,
+            alpha_bike_space=alpha_bike_space,
+            od_allowed_arcs=od_allowed_arcs,
+            car_cost_attr=car_cost_attr,
+            bike_shared_cost_attr=bike_shared_cost_attr,
+            bike_dedicated_cost_attr=bike_dedicated_cost_attr,
+            verbose=False,
+        )
+
+        # Compute per-arc scores first
+        arc_score = {}
+        for a in eligible_bike_arcs:
+            if a in fixed_bike_1 or a in fixed_bike_0:
+                continue
+            lb = float(lambda_b.get(a, 0.0))
+            if lb <= min_lambda_to_consider:
+                continue
+
+            flow_fac = 0.0
+            for p in range(len(OD_list)):
+                if (p, a) in f_b:
+                    flow_fac += float(f_b[(p, a)])
+            arc_score[a] = flow_fac * arc_benefit(a)
+
+        # Aggregate to segments
+        seg_score = []
+        for seg, arcs in seg_to_arcs.items():
+            s = 0.0
+            candidate_arcs = []
+            for a in arcs:
+                if a in arc_score:
+                    s += arc_score[a]
+                    candidate_arcs.append(a)
+            if candidate_arcs and s > 0:
+                seg_score.append((s, seg, candidate_arcs))
+
+        seg_score.sort(reverse=True, key=lambda x: x[0])
+
+        if not seg_score:
+            if verbose:
+                print(f"[round {rounds}] No segments to fix. Stopping.")
+            break
+
+        remaining = budget_bike_lanes - len(fixed_bike_1)
+        batch = min(k_fix, remaining)
+
+        fixed_this_round = 0
+        for s, seg, arcs in seg_score:
+            if fixed_this_round >= batch:
+                break
+
+            # Candidate arcs within segment, sorted by arc score
+            arcs_sorted = sorted(arcs, key=lambda a: arc_score.get(a, 0.0), reverse=True)
+
+            if fix_both_directions:
+                # Fix up to two arcs in this segment (if exist and budget allows)
+                for a in arcs_sorted[:2]:
+                    if a not in fixed_bike_1 and a not in fixed_bike_0:
+                        fixed_bike_1.add(a)
+                        fixed_this_round += 1
+                        if fixed_this_round >= batch:
+                            break
+            else:
+                # Fix only the best direction in this segment
+                a = arcs_sorted[0]
+                if a not in fixed_bike_1 and a not in fixed_bike_0:
+                    fixed_bike_1.add(a)
+                    fixed_this_round += 1
+
+        if fixed_this_round == 0:
+            if verbose:
+                print(f"[round {rounds}] Could not fix anything (budget/filters). Stopping.")
+            break
+
+        history.append({
+            "round": rounds,
+            "obj": obj,
+            "fixed_total": len(fixed_bike_1),
+            "fixed_this_round": fixed_this_round,
+            "top_seg_score": seg_score[0][0],
+        })
+
+        if verbose:
+            print(f"[round {rounds}] obj={obj:.4g} fixed={len(fixed_bike_1)}/{budget_bike_lanes} "
+                  f"(+{fixed_this_round}) top_seg_score={seg_score[0][0]:.4g}")
+
+    return fixed_bike_1, fixed_bike_0, history
