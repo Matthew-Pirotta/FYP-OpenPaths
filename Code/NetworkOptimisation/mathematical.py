@@ -257,6 +257,144 @@ ODPair = tuple[int, int, float]
 OD = list[ODPair]
 
 
+def _prepare_flow_lp_data(
+    G: MultiDiGraph,
+    seg_to_arcs: dict[Seg, list[Arc]],
+    car_cost_attr: str,
+    bike_shared_cost_attr: str,
+    bike_dedicated_cost_attr: str,
+) -> tuple[
+    list[Arc],
+    list[int],
+    dict[Arc, float],
+    dict[Arc, float],
+    dict[Arc, float],
+]:
+    all_arcs: list[Arc] = []
+    for arcs in seg_to_arcs.values():
+        all_arcs.extend(arcs)
+
+    nodes = list(G.nodes())
+    t_c: dict[Arc, float] = {}
+    t_beta: dict[Arc, float] = {}
+    t_b: dict[Arc, float] = {}
+    for a in all_arcs:
+        u, v, k = a
+        d = G[u][v][k]
+        t_c[a] = d[car_cost_attr]
+        t_beta[a] = d[bike_shared_cost_attr]
+        t_b[a] = d[bike_dedicated_cost_attr]
+
+    return all_arcs, nodes, t_c, t_beta, t_b
+
+
+def _add_capacity_block(
+    m: gp.Model,
+    all_arcs: list[Arc],
+    eligible_bike_arcs: set[Arc],
+    fixed_bike_1: set[Arc],
+    fixed_bike_0: set[Arc],
+    seg_to_arcs: dict[Seg, list[Arc]],
+    Lambda_seg: dict[Seg, float],
+    alpha_bike_space: float,
+) -> tuple[dict[Arc, gp.Var], dict[Arc, gp.Var]]:
+    lambda_c_var: dict[Arc, gp.Var] = {}
+    lambda_b_var: dict[Arc, gp.Var] = {}
+    for a in all_arcs:
+        u, v, k = a
+        lambda_c_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lc_{u}_{v}_{k}")
+        if a in eligible_bike_arcs:
+            lambda_b_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lb_{u}_{v}_{k}")
+        else:
+            lambda_b_var[a] = m.addVar(lb=0.0, ub=0.0, vtype=GRB.CONTINUOUS, name=f"lb_{u}_{v}_{k}_fixed0")
+
+    for a in fixed_bike_1:
+        if a in lambda_b_var:
+            m.addConstr(lambda_b_var[a] == 1.0, name=f"fix_b1_{a[0]}_{a[1]}_{a[2]}")
+    for a in fixed_bike_0:
+        if a in lambda_b_var:
+            m.addConstr(lambda_b_var[a] == 0.0, name=f"fix_b0_{a[0]}_{a[1]}_{a[2]}")
+
+    for seg, arcs in seg_to_arcs.items():
+        if seg not in Lambda_seg:
+            raise KeyError(f"Missing Lambda_seg for segment {seg}")
+        m.addConstr(
+            gp.quicksum(lambda_c_var[a] for a in arcs) +
+            alpha_bike_space * gp.quicksum(lambda_b_var[a] for a in arcs)
+            <= float(Lambda_seg[seg]),
+            name=f"space_{seg[0]}_{seg[1]}",
+        )
+
+    m.update()
+    return lambda_c_var, lambda_b_var
+
+
+def _add_flow_block(
+    m: gp.Model,
+    OD: OD,
+    nodes: list[int],
+    all_arcs: list[Arc],
+    od_allowed_arcs: Optional[dict[int, set[Arc]]],
+    lambda_c_var: dict[Arc, gp.Var],
+    lambda_b_var: dict[Arc, gp.Var],
+) -> tuple[
+    dict[tuple[int, Arc], gp.Var],
+    dict[tuple[int, Arc], gp.Var],
+    dict[tuple[int, Arc], gp.Var],
+    dict[int, set[Arc]],
+]:
+    f_c_var: dict[tuple[int, Arc], gp.Var] = {}
+    f_b_var: dict[tuple[int, Arc], gp.Var] = {}
+    f_beta_var: dict[tuple[int, Arc], gp.Var] = {}
+    f_c_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
+    f_b_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
+    od_arcs_by_idx: dict[int, set[Arc]] = {}
+    all_arcs_set = set(all_arcs)
+
+    for p, (s, t, w) in enumerate(OD):
+        arcs_p = od_allowed_arcs.get(p, set()) if od_allowed_arcs is not None else all_arcs_set
+        od_arcs_by_idx[p] = arcs_p
+
+        out_p: dict[int, list[Arc]] = defaultdict(list)
+        in_p: dict[int, list[Arc]] = defaultdict(list)
+        for a in arcs_p:
+            u, v, _ = a
+            out_p[u].append(a)
+            in_p[v].append(a)
+
+        for a in arcs_p:
+            u, v, k = a
+            vc = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fc_{p}_{u}_{v}_{k}")
+            vb = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fb_{p}_{u}_{v}_{k}")
+            vbeta = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fbe_{p}_{u}_{v}_{k}")
+
+            f_c_var[(p, a)] = vc
+            f_b_var[(p, a)] = vb
+            f_beta_var[(p, a)] = vbeta
+            f_c_on_arc[a].append(vc)
+            f_b_on_arc[a].append(vb)
+
+        for i in nodes:
+            rhs = float(w) if i == s else -float(w) if i == t else 0.0
+            out_car = gp.quicksum(f_c_var[(p, a)] for a in out_p.get(i, []))
+            in_car = gp.quicksum(f_c_var[(p, a)] for a in in_p.get(i, []))
+            m.addConstr(out_car - in_car == rhs, name=f"car_cons_{p}_{i}")
+
+            out_bike = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in out_p.get(i, []))
+            in_bike = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in in_p.get(i, []))
+            m.addConstr(out_bike - in_bike == rhs, name=f"bike_cons_{p}_{i}")
+
+    for a in all_arcs:
+        u, v, k = a
+        if a in f_c_on_arc:
+            m.addConstr(gp.quicksum(f_c_on_arc[a]) <= lambda_c_var[a], name=f"cap_car_{u}_{v}_{k}")
+        if a in f_b_on_arc:
+            m.addConstr(gp.quicksum(f_b_on_arc[a]) <= lambda_b_var[a], name=f"cap_bike_{u}_{v}_{k}")
+
+    m.update()
+    return f_c_var, f_b_var, f_beta_var, od_arcs_by_idx
+
+
 def solve_flow_lp(
     G: MultiDiGraph,
     OD: OD,
@@ -337,229 +475,140 @@ def solve_flow_lp(
     - Be careful: multi-commodity flow size is O(|OD|*|E|). Use od_allowed_arcs in real instances.
     """
 
-    # ----------------------------
-    # Collect arcs and nodes
-    # ----------------------------
-    all_arcs: list[Arc] = []
-    for arcs in seg_to_arcs.values():
-        all_arcs.extend(arcs)
+    all_arcs, nodes, t_c, t_beta, t_b = _prepare_flow_lp_data(
+        G=G,
+        seg_to_arcs=seg_to_arcs,
+        car_cost_attr=car_cost_attr,
+        bike_shared_cost_attr=bike_shared_cost_attr,
+        bike_dedicated_cost_attr=bike_dedicated_cost_attr,
+    )
 
-    nodes = list(G.nodes())
-
-    # Precompute per-node outgoing/incoming arcs for conservation
-    out_arcs_all: dict[int, list[Arc]] = defaultdict(list)
-    in_arcs_all: dict[int, list[Arc]] = defaultdict(list)
-    for (u, v, k) in all_arcs:
-        out_arcs_all[u].append((u, v, k))
-        in_arcs_all[v].append((u, v, k))
-
-    # Pull cost parameters for objective (t_c, t_beta, t_b)
-    t_c: dict[Arc, float] = {}
-    t_beta: dict[Arc, float] = {}
-    t_b: dict[Arc, float] = {}
-
-    for a in all_arcs:
-        u, v, k = a
-        d = G[u][v][k]
-
-        t_c[a] = d[car_cost_attr]
-        t_beta[a] =d[bike_shared_cost_attr]
-        t_b[a] = d[bike_dedicated_cost_attr]
-
-    # ----------------------------
-    # Build model
-    # ----------------------------
     m = gp.Model("flow_lane_lp")
     m.Params.OutputFlag = 1 if verbose else 0
+    if time_limit is not None:
+        m.Params.TimeLimit = float(time_limit)
 
-    # ----------------------------
-    # Capacity decision variables
-    # ----------------------------
-    lambda_c_var: dict[Arc, gp.Var] = {}
-    lambda_b_var: dict[Arc, gp.Var] = {}
+    lambda_c_var, lambda_b_var = _add_capacity_block(
+        m=m,
+        all_arcs=all_arcs,
+        eligible_bike_arcs=eligible_bike_arcs,
+        fixed_bike_1=fixed_bike_1,
+        fixed_bike_0=fixed_bike_0,
+        seg_to_arcs=seg_to_arcs,
+        Lambda_seg=Lambda_seg,
+        alpha_bike_space=alpha_bike_space,
+    )
+    f_c_var, f_b_var, f_beta_var, od_arcs_by_idx = _add_flow_block(
+        m=m,
+        OD=OD,
+        nodes=nodes,
+        all_arcs=all_arcs,
+        od_allowed_arcs=od_allowed_arcs,
+        lambda_c_var=lambda_c_var,
+        lambda_b_var=lambda_b_var,
+    )
 
-    for a in all_arcs:
-        u, v, k = a
-        lambda_c_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lc_{u}_{v}_{k}")
-
-        # bike capacity only if eligible; otherwise force to 0
-        if a in eligible_bike_arcs:
-            lambda_b_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lb_{u}_{v}_{k}")
-        else:
-            # create var but fix to 0 for uniformity (simplifies expressions)
-            lambda_b_var[a] = m.addVar(lb=0.0, ub=0.0, vtype=GRB.CONTINUOUS, name=f"lb_{u}_{v}_{k}_fixed0")
-
-    m.update()
-
-    # ----------------------------
-    # Fixing constraints
-    # ----------------------------
-    for a in fixed_bike_1:
-        if a not in lambda_b_var:
-            continue
-        m.addConstr(lambda_b_var[a] == 1.0, name=f"fix_b1_{a[0]}_{a[1]}_{a[2]}")
-
-    for a in fixed_bike_0:
-        if a not in lambda_b_var:
-            continue
-        m.addConstr(lambda_b_var[a] == 0.0, name=f"fix_b0_{a[0]}_{a[1]}_{a[2]}")
-
-    # ----------------------------
-    # Segment space constraints (shared street width)
-    # ----------------------------
-    for seg, arcs in seg_to_arcs.items():
-        if seg not in Lambda_seg:
-            raise KeyError(f"Missing Lambda_seg for segment {seg}")
-
-        m.addConstr(
-            gp.quicksum(lambda_c_var[a] for a in arcs) +
-            alpha_bike_space * gp.quicksum(lambda_b_var[a] for a in arcs)
-            <= float(Lambda_seg[seg]),
-            name=f"space_{seg[0]}_{seg[1]}",
-        )
-
-    # ----------------------------
-    # Flow variables (multi-commodity)
-    # ----------------------------
-    # Index OD pairs by integer to avoid big tuple keys in gurobi names
-    n_od = len(OD)
-
-    f_c_var: dict[tuple[int, Arc], gp.Var] = {}
-    f_b_var: dict[tuple[int, Arc], gp.Var] = {}
-    f_beta_var: dict[tuple[int, Arc], gp.Var] = {}
-
-    # For capacity constraints we need fast per-arc sums over OD.
-    # We'll store per-arc lists of vars.
-    f_c_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
-    f_b_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
-    f_beta_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
-
-    for p, (s, t, w) in enumerate(OD):
-        # choose allowed arcs for this OD (if provided)
-        if od_allowed_arcs is not None:
-            arcs_p = od_allowed_arcs.get(p, set())
-        else:
-            arcs_p = set(all_arcs)
-
-        # Build per-node arc lists for this OD to speed conservation
-        out_p: dict[int, list[Arc]] = defaultdict(list)
-        in_p: dict[int, list[Arc]] = defaultdict(list)
-        for a in arcs_p:
-            u, v, k = a
-            out_p[u].append(a)
-            in_p[v].append(a)
-
-        # Flow vars on allowed arcs
-        for a in arcs_p:
-            u, v, k = a
-            # Car flow
-            vc = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fc_{p}_{u}_{v}_{k}")
-            f_c_var[(p, a)] = vc
-            f_c_on_arc[a].append(vc)
-
-            # Bike on dedicated facility
-            vb = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fb_{p}_{u}_{v}_{k}")
-            f_b_var[(p, a)] = vb
-            f_b_on_arc[a].append(vb)
-
-            # Bike on shared car space
-            vbeta = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fbe_{p}_{u}_{v}_{k}")
-            f_beta_var[(p, a)] = vbeta
-            f_beta_on_arc[a].append(vbeta)
-
-        # Conservation constraints (cars)
-        # out - in = +w at source, -w at sink, 0 else
-        for i in nodes:
-            rhs = 0.0
-            if i == s:
-                rhs = float(w)
-            elif i == t:
-                rhs = -float(w)
-
-            out_expr = gp.quicksum(f_c_var[(p, a)] for a in out_p.get(i, []))
-            in_expr = gp.quicksum(f_c_var[(p, a)] for a in in_p.get(i, []))
-            m.addConstr(out_expr - in_expr == rhs, name=f"car_cons_{p}_{i}")
-
-        # Conservation constraints (bikes): on (f_b + f_beta)
-        for i in nodes:
-            rhs = 0.0
-            if i == s:
-                rhs = float(w)
-            elif i == t:
-                rhs = -float(w)
-
-            out_expr = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in out_p.get(i, []))
-            in_expr = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in in_p.get(i, []))
-            m.addConstr(out_expr - in_expr == rhs, name=f"bike_cons_{p}_{i}")
-
-    m.update()
-
-    # ----------------------------
-    # Capacity constraints (per arc). How much capacity the arc has for the flow 
-    # ----------------------------
-    for a in all_arcs:
-        # Car capacity
-        u,v,k = a
-        if a in f_c_on_arc:
-            m.addConstr(gp.quicksum(f_c_on_arc[a]) <= lambda_c_var[a], name=f"cap_car_{u}_{v}_{k}")
-        else:
-            # No OD uses this arc => no constraint needed
-            pass
-
-        # Bike facility capacity
-        if a in f_b_on_arc:
-            m.addConstr(gp.quicksum(f_b_on_arc[a]) <= lambda_b_var[a], name=f"cap_bike_{u}_{v}_{k}")
-        else:
-            pass
-
-        """# Optional: cap shared biking as well (usually not in Wiedemann)
-        if cap_shared_bike_flow and (a in f_beta_on_arc):
-            # Big-M style cap: <= big * lambda_c_var[a] or big * Lambda(seg)
-            # Here: big cap proportional to segment width if we can find it.
-            seg = (min(a[0], a[1]), max(a[0], a[1]))
-            big = float(Lambda_seg.get(seg, 1.0)) * float(shared_bike_cap_multiplier)
-            m.addConstr(gp.quicksum(f_beta_on_arc[a]) <= big, name=f"cap_shared_{a[0]}_{a[1]}_{a[2]}")"""
-        
-    # ----------------------------
-    # Objective
-    # ----------------------------
     obj = gp.LinExpr()
-    for (p, (s, t, w)) in enumerate(OD):
-
-        # Use OD restriction if provided; else all arcs
-        arcs_p = od_allowed_arcs.get(p, set()) if od_allowed_arcs is not None else set(all_arcs)
-
-        for a in arcs_p:
-            # car
+    for p, (_, _, w) in enumerate(OD):
+        for a in od_arcs_by_idx[p]:
             obj += w * gamma * t_c[a] * f_c_var[(p, a)]
-            # bike dedicated
             obj += w * t_b[a] * f_b_var[(p, a)]
-            # bike shared
             obj += w * t_beta[a] * f_beta_var[(p, a)]
-
     m.setObjective(obj, GRB.MINIMIZE)
 
-    # ----------------------------
-    # Solve
-    # ----------------------------
+    # Kept for API compatibility. Shared-bike caps are intentionally disabled.
+    _ = cap_shared_bike_flow, shared_bike_cap_multiplier
+
     m.optimize()
 
     if m.status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
         raise RuntimeError(f"solve_flow_lp failed with status {m.status}")
 
-    # ----------------------------
-    # Extract solution
-    # ----------------------------
     lambda_c = {a: float(var.X) for a, var in lambda_c_var.items()}
     lambda_b = {a: float(var.X) for a, var in lambda_b_var.items()}
-
     f_c = {(p, a): float(var.X) for (p, a), var in f_c_var.items()}
     f_b = {(p, a): float(var.X) for (p, a), var in f_b_var.items()}
     f_beta = {(p, a): float(var.X) for (p, a), var in f_beta_var.items()}
-
     obj_val = float(m.ObjVal)
-
     return lambda_c, lambda_b, f_c, f_b, f_beta, obj_val
+
+
+def _score_segments_for_rounding(
+    G: MultiDiGraph,
+    OD_list: list[OD],
+    seg_to_arcs: dict[Seg, list[Arc]],
+    eligible_bike_arcs: set[Arc],
+    fixed_bike_1: set[Arc],
+    fixed_bike_0: set[Arc],
+    lambda_b: dict[Arc, float],
+    f_b: dict[tuple[int, Arc], float],
+    min_lambda_to_consider: float,
+    bike_shared_cost_attr: str,
+    bike_dedicated_cost_attr: str,
+) -> tuple[dict[Arc, float], list[tuple[float, Seg, list[Arc]]]]:
+    arc_score: dict[Arc, float] = {}
+    for a in eligible_bike_arcs:
+        if a in fixed_bike_1 or a in fixed_bike_0:
+            continue
+        lb = float(lambda_b.get(a, 0.0))
+        if lb <= min_lambda_to_consider:
+            continue
+
+        flow_fac = 0.0
+        for p in range(len(OD_list)):
+            if (p, a) in f_b:
+                flow_fac += float(f_b[(p, a)])
+
+        u, v, k = a
+        d = G[u][v][k]
+        t_beta = float(d.get(bike_shared_cost_attr, d.get("bike_cost_penalty", 0.0)))
+        t_b = float(d.get(bike_dedicated_cost_attr, t_beta))
+        arc_score[a] = flow_fac * max(0.0, t_beta - t_b)
+
+    seg_score: list[tuple[float, Seg, list[Arc]]] = []
+    for seg, arcs in seg_to_arcs.items():
+        s = 0.0
+        candidate_arcs: list[Arc] = []
+        for a in arcs:
+            if a in arc_score:
+                s += arc_score[a]
+                candidate_arcs.append(a)
+        if candidate_arcs and s > 0:
+            seg_score.append((s, seg, candidate_arcs))
+
+    seg_score.sort(reverse=True, key=lambda x: x[0])
+    return arc_score, seg_score
+
+
+def _apply_segment_fixings(
+    seg_score: list[tuple[float, Seg, list[Arc]]],
+    arc_score: dict[Arc, float],
+    fixed_bike_1: set[Arc],
+    fixed_bike_0: set[Arc],
+    batch: int,
+    fix_both_directions: bool,
+) -> int:
+    fixed_this_round = 0
+    for _, _, arcs in seg_score:
+        if fixed_this_round >= batch:
+            break
+
+        arcs_sorted = sorted(arcs, key=lambda a: arc_score.get(a, 0.0), reverse=True)
+
+        if fix_both_directions:
+            for a in arcs_sorted[:2]:
+                if a not in fixed_bike_1 and a not in fixed_bike_0:
+                    fixed_bike_1.add(a)
+                    fixed_this_round += 1
+                    if fixed_this_round >= batch:
+                        break
+        else:
+            a = arcs_sorted[0]
+            if a not in fixed_bike_1 and a not in fixed_bike_0:
+                fixed_bike_1.add(a)
+                fixed_this_round += 1
+
+    return fixed_this_round
 
 
 def round_lp_solution_segment_aware(
@@ -590,17 +639,10 @@ def round_lp_solution_segment_aware(
     history = []
     rounds = 0
 
-    def arc_benefit(a: Arc) -> float:
-        u, v, k = a
-        d = G[u][v][k]
-        t_beta = float(d.get(bike_shared_cost_attr, d.get("bike_cost_penalty", 0.0)))
-        t_b = float(d.get(bike_dedicated_cost_attr, t_beta))
-        return max(0.0, t_beta - t_b)
-
     while len(fixed_bike_1) < budget_bike_lanes:
         rounds += 1
 
-        lambda_c, lambda_b, f_c, f_b, f_beta, obj = solve_flow_lp_fn(
+        _, lambda_b, _, f_b, _, obj = solve_flow_lp_fn(
             G=G,
             OD=OD_list,
             seg_to_arcs=seg_to_arcs,
@@ -617,34 +659,19 @@ def round_lp_solution_segment_aware(
             verbose=False,
         )
 
-        # Compute per-arc scores first
-        arc_score = {}
-        for a in eligible_bike_arcs:
-            if a in fixed_bike_1 or a in fixed_bike_0:
-                continue
-            lb = float(lambda_b.get(a, 0.0))
-            if lb <= min_lambda_to_consider:
-                continue
-
-            flow_fac = 0.0
-            for p in range(len(OD_list)):
-                if (p, a) in f_b:
-                    flow_fac += float(f_b[(p, a)])
-            arc_score[a] = flow_fac * arc_benefit(a)
-
-        # Aggregate to segments
-        seg_score = []
-        for seg, arcs in seg_to_arcs.items():
-            s = 0.0
-            candidate_arcs = []
-            for a in arcs:
-                if a in arc_score:
-                    s += arc_score[a]
-                    candidate_arcs.append(a)
-            if candidate_arcs and s > 0:
-                seg_score.append((s, seg, candidate_arcs))
-
-        seg_score.sort(reverse=True, key=lambda x: x[0])
+        arc_score, seg_score = _score_segments_for_rounding(
+            G=G,
+            OD_list=OD_list,
+            seg_to_arcs=seg_to_arcs,
+            eligible_bike_arcs=eligible_bike_arcs,
+            fixed_bike_1=fixed_bike_1,
+            fixed_bike_0=fixed_bike_0,
+            lambda_b=lambda_b,
+            f_b=f_b,
+            min_lambda_to_consider=min_lambda_to_consider,
+            bike_shared_cost_attr=bike_shared_cost_attr,
+            bike_dedicated_cost_attr=bike_dedicated_cost_attr,
+        )
 
         if not seg_score:
             if verbose:
@@ -654,28 +681,14 @@ def round_lp_solution_segment_aware(
         remaining = budget_bike_lanes - len(fixed_bike_1)
         batch = min(k_fix, remaining)
 
-        fixed_this_round = 0
-        for s, seg, arcs in seg_score:
-            if fixed_this_round >= batch:
-                break
-
-            # Candidate arcs within segment, sorted by arc score
-            arcs_sorted = sorted(arcs, key=lambda a: arc_score.get(a, 0.0), reverse=True)
-
-            if fix_both_directions:
-                # Fix up to two arcs in this segment (if exist and budget allows)
-                for a in arcs_sorted[:2]:
-                    if a not in fixed_bike_1 and a not in fixed_bike_0:
-                        fixed_bike_1.add(a)
-                        fixed_this_round += 1
-                        if fixed_this_round >= batch:
-                            break
-            else:
-                # Fix only the best direction in this segment
-                a = arcs_sorted[0]
-                if a not in fixed_bike_1 and a not in fixed_bike_0:
-                    fixed_bike_1.add(a)
-                    fixed_this_round += 1
+        fixed_this_round = _apply_segment_fixings(
+            seg_score=seg_score,
+            arc_score=arc_score,
+            fixed_bike_1=fixed_bike_1,
+            fixed_bike_0=fixed_bike_0,
+            batch=batch,
+            fix_both_directions=fix_both_directions,
+        )
 
         if fixed_this_round == 0:
             if verbose:

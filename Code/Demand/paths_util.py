@@ -107,13 +107,7 @@ def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int,
 
     return visited
 
-def _collect_path_seed_segments(
-    G: MultiDiGraph,
-    o: int,
-    d: int,
-    weight_attr: str,
-    arc_to_seg: dict[Arc, Seg],
-) -> set[Seg]:
+def _collect_path_seed_segments( G: MultiDiGraph, o: int, d: int, weight_attr: str, arc_to_seg: dict[Arc, Seg]) -> set[Seg]:
     """Shortest path -> arcs -> mapped seed segments."""
     try:
         path_nodes = nx.shortest_path(G, o, d, weight=weight_attr)
@@ -189,10 +183,14 @@ def build_od_allowed_arcs(
     corridor_hops: int = 2,
     include_car_path: bool = True,
     include_bike_path: bool = True,
-) -> dict[int, set[Arc]]:
+) -> tuple[set[Seg],set[Arc],dict[int, set[Arc]]]:
     """
     Build per-OD allowed arcs for spatial relaxation (Wiedemann-style).
+
+    Returns
+    seed_segs, arcs_corr, od_allowed
     """
+
     od_allowed: dict[int, set[Arc]] = {}
 
     for p, (o, d, _) in enumerate(OD_list):
@@ -221,6 +219,6 @@ def build_od_allowed_arcs(
 
         od_allowed[p] = arcs_corr
 
-    return od_allowed
+    return seed_segs, arcs_corr, od_allowed
 
 #endregion

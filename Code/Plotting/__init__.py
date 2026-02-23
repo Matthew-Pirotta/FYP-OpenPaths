@@ -1,5 +1,5 @@
 from Plotting.renderer import draw_graph, plot_graph_by_edge_attr
-from Plotting.network import plot_categorical_attr, plot_boolean_attribute
+from Plotting.network import plot_categorical_attr, plot_boolean_attribute, plot_od_allowed_corridor
 from Plotting.attributes import plot_elevation, plot_grades
 from Plotting.evolution import plot_snapshots, plot_network_evolution
 from Plotting.evaluation import plot_metrics
@@ -10,6 +10,7 @@ __all__ = [
     "plot_graph_by_edge_attr",
     "plot_categorical_attr",
     "plot_boolean_attribute",
+    "plot_od_allowed_corridor",
     "plot_elevation",
     "plot_grades",
     "plot_snapshots",
