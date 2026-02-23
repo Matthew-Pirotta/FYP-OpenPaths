@@ -147,8 +147,5 @@ def build_segment_graph(G: MultiDiGraph):
     seg_to_arcs = dict(seg_to_arcs)
     arc_to_seg = dict(arc_to_seg)
 
-    G_seg.graph["seg_to_arcs"] = seg_to_arcs
-    G_seg.graph["arc_to_seg"] = arc_to_seg
-
     return seg_to_arcs, arc_to_seg, G_seg
 #endregion
