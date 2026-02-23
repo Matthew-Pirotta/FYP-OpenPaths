@@ -101,6 +101,139 @@ def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int,
     return visited
 
 
+#region build_od_allowed_arcs
+def _collect_path_seed_segments(
+    G: MultiDiGraph,
+    o: int,
+    d: int,
+    weight_attr: str,
+    arc_to_seg: dict[Arc, Seg],
+) -> set[Seg]:
+    """Shortest path -> arcs -> mapped seed segments."""
+    try:
+        path_nodes = nx.shortest_path(G, o, d, weight=weight_attr)
+    except nx.NetworkXNoPath:
+        return set()
+
+    seed_segs: set[Seg] = set()
+    for arc in _path_to_arcs(path_nodes):
+        seg = arc_to_seg.get(arc)
+        if seg is not None:
+            seed_segs.add(seg)
+    return seed_segs
+
+def _collect_seed_segments_for_od(
+    G: MultiDiGraph,
+    o: int,
+    d: int,
+    arc_to_seg: dict[Arc, Seg],
+    *,
+    include_car_path: bool,
+    include_bike_path: bool,
+    car_weight: str,
+    bike_weight: str,
+) -> set[Seg]:
+    """Collect seed segments from enabled baseline paths."""
+    seed_segs: set[Seg] = set()
+
+    if include_car_path:
+        seed_segs.update(
+            _collect_path_seed_segments(G, o, d, car_weight, arc_to_seg)
+        )
+
+    if include_bike_path:
+        seed_segs.update(
+            _collect_path_seed_segments(G, o, d, bike_weight, arc_to_seg)
+        )
+
+    return seed_segs
+
+def _segments_to_arcs_set(
+    segs: set[Seg],
+    seg_to_arcs: dict[Seg, list[Arc]],
+) -> set[Arc]:
+    
+    arcs: set[Arc] = set()
+    for seg in segs:
+        arcs.update(seg_to_arcs.get(seg, []))
+    return arcs
+
+
+def _expand_corridor_with_soft_fallback(
+    G_seg: MultiDiGraph,
+    seed_segs: set[Seg],
+    arc_to_seg: dict[Arc, Seg],
+    seg_to_arcs: dict[Seg, list[Arc]],
+    *,
+    corridor_hops: int,
+    min_arcs_per_od: int,
+    max_extra_hops: int = 6,
+) -> tuple[set[Seg], set[Arc], int]:
+    """
+    Build k-hop segment corridor and widen if arc count is below min_arcs_per_od.
+    Returns (segments, arcs, final_hops).
+    """
+    hops = corridor_hops
+    segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
+    arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
+
+    while len(arcs_corr) < min_arcs_per_od and hops < corridor_hops + max_extra_hops:
+        hops += 1
+        segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
+        arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
+
+    return segs_corr, arcs_corr, hops
+
+def _ordered_segments_bfs(
+    G_seg: MultiDiGraph,
+    seed_segs: set[Seg],
+    arc_to_seg: dict[Arc, Seg],
+    *,
+    hops: int,
+    key: int,
+) -> list[Seg]:
+    """BFS segment expansion order from seeds up to hop depth."""
+    visited = set(seed_segs)
+    q = deque([(seg, 0) for seg in seed_segs])
+    ordered_segs: list[Seg] = []
+
+    while q:
+        seg, depth = q.popleft()
+        ordered_segs.append(seg)
+
+        if depth >= hops:
+            continue
+
+        a, b, _ = seg
+        for endpoint in (a, b):
+            for x, y, kk in G_seg.edges(endpoint, keys=True):
+                if kk != key:
+                    continue
+                seg2 = arc_to_seg.get((x, y, key))
+                if seg2 is None or seg2 in visited:
+                    continue
+                visited.add(seg2)
+                q.append((seg2, depth + 1))
+
+    return ordered_segs
+
+def _trim_arcs_with_hard_cap(
+    ordered_segs: list[Seg],
+    seg_to_arcs: dict[Seg, list[Arc]],
+    max_arcs_per_od: int,
+) -> set[Arc]:
+    """Accumulate arcs by segment order and enforce exact cap."""
+    trimmed: set[Arc] = set()
+    for seg in ordered_segs:
+        trimmed.update(seg_to_arcs.get(seg, []))
+        if len(trimmed) >= max_arcs_per_od:
+            break
+
+    if len(trimmed) <= max_arcs_per_od:
+        return trimmed
+
+    return set(list(trimmed)[:max_arcs_per_od])
+
 def build_od_allowed_arcs(
     G: MultiDiGraph,
     G_seg: MultiDiGraph,
@@ -108,133 +241,61 @@ def build_od_allowed_arcs(
     seg_to_arcs: dict[Seg, list[Arc]],
     arc_to_seg: dict[Arc, Seg],
     *,
-    # weights for baseline paths
     car_weight: str = "car_cost_current",
-    bike_weight_prefer: str = "bike_cost_current",   # will fallback to bike_cost_penalty if missing
-    # corridor controls
+    bike_weight: str = "bike_cost_current",
     corridor_hops: int = 2,
     min_arcs_per_od: int = 300,
     max_arcs_per_od: Optional[int] = None,
-    # toggles
     include_car_path: bool = True,
     include_bike_path: bool = True,
-    # single-key assumption
     key: int = 0,
 ) -> dict[int, set[Arc]]:
     """
     Build per-OD allowed arcs for spatial relaxation (Wiedemann-style).
-
-    Assumptions (as requested)
-    --------------------------
-    - There is effectively only one key in the directed graph and segment graph (default k=0).
-    - Segments are represented as (u, v, k) where u=min(node ids), v=max(node ids), k=0.
-
-    Method
-    ------
-    For each OD index p:
-      1) compute baseline car shortest path (optional)
-      2) compute baseline bike shortest path (optional)
-      3) convert those paths to seed segments (u,v,k) using arc_to_seg
-      4) expand seed segments by corridor_hops using the segment graph G_seg
-      5) map corridor segments back to directed arcs using seg_to_arcs
-
-    Returns
-    -------
-    dict
-      od_allowed_arcs[p] = set of allowed directed arcs (u,v,k) for OD p
     """
     od_allowed: dict[int, set[Arc]] = {}
 
-    # Determine which bike weight exists on edges
-    bike_weight = bike_weight_prefer
-    # check one edge quickly
-    #TODO remove this at some point?
-    for _, _, _, d in G.edges(keys=True, data=True):
-        if bike_weight_prefer not in d:
-            bike_weight = "bike_cost_penalty"
-        break
+    for p, (o, d, _) in enumerate(OD_list):
+        seed_segs = _collect_seed_segments_for_od(
+            G,
+            o,
+            d,
+            arc_to_seg,
+            include_car_path=include_car_path,
+            include_bike_path=include_bike_path,
+            car_weight=car_weight,
+            bike_weight=bike_weight,
+        )
 
-    for p, (o, d, w) in enumerate(OD_list):
-        seed_segs: set[Seg] = set()
-
-        # --- Car baseline ---
-        if include_car_path:
-            try:
-                car_path_nodes = nx.shortest_path(G, o, d, weight=car_weight)
-                car_arcs = _path_to_arcs(car_path_nodes)
-                for a in car_arcs:
-                    seg = arc_to_seg.get(a)
-                    if seg is not None:
-                        seed_segs.add(seg)
-            except nx.NetworkXNoPath:
-                pass
-
-        # --- Bike baseline ---
-        if include_bike_path:
-            try:
-                bike_path_nodes = nx.shortest_path(G, o, d, weight=bike_weight)
-                bike_arcs = _path_to_arcs(bike_path_nodes)
-                for a in bike_arcs:
-                    seg = arc_to_seg.get(a)
-                    if seg is not None:
-                        seed_segs.add(seg)
-            except nx.NetworkXNoPath:
-                pass
-
-        # No seeds => no corridor (keep empty; solver should skip OD or handle)
         if not seed_segs:
             od_allowed[p] = set()
             continue
 
-        # Expand corridor; if too small, widen hops up to a cap
-        hops = corridor_hops
-        segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
+        _, arcs_corr, hops = _expand_corridor_with_soft_fallback(
+            G_seg,
+            seed_segs,
+            arc_to_seg,
+            seg_to_arcs,
+            corridor_hops=corridor_hops,
+            min_arcs_per_od=min_arcs_per_od,
+        )
 
-        def segs_to_arcs_set(segs: set[Seg]) -> set[Arc]:
-            arcs: set[Arc] = set()
-            for seg in segs:
-                arcs.update(seg_to_arcs.get(seg, []))
-            return arcs
-
-        arcs_corr = segs_to_arcs_set(segs_corr)
-
-        # Soft fallback: widen corridor if it's too small
-        while len(arcs_corr) < min_arcs_per_od and hops < corridor_hops + 6:
-            hops += 1
-            segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
-            arcs_corr = segs_to_arcs_set(segs_corr)
-
-        # Optional hard cap
         if max_arcs_per_od is not None and len(arcs_corr) > max_arcs_per_od:
-            # Keep segments in BFS expansion order until arc budget filled
-            visited = set(seed_segs)
-            q = deque([(seg, 0) for seg in seed_segs])
-            ordered_segs: list[Seg] = []
-
-            while q:
-                seg, depth = q.popleft()
-                ordered_segs.append(seg)
-                if depth >= hops:
-                    continue
-                a, b, _ = seg
-                for endpoint in (a, b):
-                    for x, y, kk in G_seg.edges(endpoint, keys=True):
-                        if kk != key:
-                            continue
-                        seg2 = arc_to_seg[(x, y, key)]
-                        if seg2 not in visited:
-                            visited.add(seg2)
-                            q.append((seg2, depth + 1))
-
-            trimmed: set[Arc] = set()
-            for seg in ordered_segs:
-                trimmed.update(seg_to_arcs.get(seg, []))
-                if len(trimmed) >= max_arcs_per_od:
-                    break
-
-            # enforce the cap exactly
-            arcs_corr = set(list(trimmed)[:max_arcs_per_od])
+            ordered_segs = _ordered_segments_bfs(
+                G_seg,
+                seed_segs,
+                arc_to_seg,
+                hops=hops,
+                key=key,
+            )
+            arcs_corr = _trim_arcs_with_hard_cap(
+                ordered_segs,
+                seg_to_arcs,
+                max_arcs_per_od,
+            )
 
         od_allowed[p] = arcs_corr
 
     return od_allowed
+
+#endregion
