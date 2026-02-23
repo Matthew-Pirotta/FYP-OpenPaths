@@ -70,10 +70,17 @@ def compute_edge_importance(G, paths):
 
 
 #NOTE Use G_seg (undirected segment graph) for corridor expansion because it approximates “nearby streets” without directionality headaches
-#TODO can remove?
 def _path_to_arcs(path: list[int]) -> list[Arc]:
+    """
+    Converts an ordered list of nodes into a list of directed arcs.
+
+    Example:
+        >>> _path_to_arcs([1, 2, 3])
+        [(1, 2, 0), (2, 3, 0)]
+    """
     return [(u, v, 0) for u, v in zip(path[:-1], path[1:])]
 
+#region build_od_allowed_arcs
 
 def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int, arc_to_seg:dict[Arc, Seg]) -> set[Seg]:
     """Expand a set of undirected segments by k hops in the undirected segment graph."""
@@ -92,16 +99,14 @@ def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int,
 
         a, b, _= seg
         for endpoint in (a, b):
-            for x, y, kk in G_seg.edges(endpoint, keys=True):
-                seg2 =  arc_to_seg[(x, y, 0)]
+            for x, y, k in G_seg.edges(endpoint, keys=True):
+                seg2 =  arc_to_seg[(x, y, k)]
                 if seg2 not in visited:
                     visited.add(seg2)
                     q.append((seg2, depth + 1))
 
     return visited
 
-
-#region build_od_allowed_arcs
 def _collect_path_seed_segments(
     G: MultiDiGraph,
     o: int,
@@ -115,8 +120,9 @@ def _collect_path_seed_segments(
     except nx.NetworkXNoPath:
         return set()
 
+    path_arcs = _path_to_arcs(path_nodes)
     seed_segs: set[Seg] = set()
-    for arc in _path_to_arcs(path_nodes):
+    for arc in path_arcs:
         seg = arc_to_seg.get(arc)
         if seg is not None:
             seed_segs.add(seg)
@@ -158,81 +164,18 @@ def _segments_to_arcs_set(
         arcs.update(seg_to_arcs.get(seg, []))
     return arcs
 
-
-def _expand_corridor_with_soft_fallback(
+def _expand_corridor(
     G_seg: MultiDiGraph,
     seed_segs: set[Seg],
     arc_to_seg: dict[Arc, Seg],
     seg_to_arcs: dict[Seg, list[Arc]],
     *,
     corridor_hops: int,
-    min_arcs_per_od: int,
-    max_extra_hops: int = 6,
-) -> tuple[set[Seg], set[Arc], int]:
-    """
-    Build k-hop segment corridor and widen if arc count is below min_arcs_per_od.
-    Returns (segments, arcs, final_hops).
-    """
-    hops = corridor_hops
-    segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
-    arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
-
-    while len(arcs_corr) < min_arcs_per_od and hops < corridor_hops + max_extra_hops:
-        hops += 1
-        segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, hops, arc_to_seg)
-        arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
-
-    return segs_corr, arcs_corr, hops
-
-def _ordered_segments_bfs(
-    G_seg: MultiDiGraph,
-    seed_segs: set[Seg],
-    arc_to_seg: dict[Arc, Seg],
-    *,
-    hops: int,
-    key: int,
-) -> list[Seg]:
-    """BFS segment expansion order from seeds up to hop depth."""
-    visited = set(seed_segs)
-    q = deque([(seg, 0) for seg in seed_segs])
-    ordered_segs: list[Seg] = []
-
-    while q:
-        seg, depth = q.popleft()
-        ordered_segs.append(seg)
-
-        if depth >= hops:
-            continue
-
-        a, b, _ = seg
-        for endpoint in (a, b):
-            for x, y, kk in G_seg.edges(endpoint, keys=True):
-                if kk != key:
-                    continue
-                seg2 = arc_to_seg.get((x, y, key))
-                if seg2 is None or seg2 in visited:
-                    continue
-                visited.add(seg2)
-                q.append((seg2, depth + 1))
-
-    return ordered_segs
-
-def _trim_arcs_with_hard_cap(
-    ordered_segs: list[Seg],
-    seg_to_arcs: dict[Seg, list[Arc]],
-    max_arcs_per_od: int,
 ) -> set[Arc]:
-    """Accumulate arcs by segment order and enforce exact cap."""
-    trimmed: set[Arc] = set()
-    for seg in ordered_segs:
-        trimmed.update(seg_to_arcs.get(seg, []))
-        if len(trimmed) >= max_arcs_per_od:
-            break
-
-    if len(trimmed) <= max_arcs_per_od:
-        return trimmed
-
-    return set(list(trimmed)[:max_arcs_per_od])
+    
+    segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, corridor_hops, arc_to_seg)
+    arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
+    return arcs_corr
 
 def build_od_allowed_arcs(
     G: MultiDiGraph,
@@ -244,11 +187,8 @@ def build_od_allowed_arcs(
     car_weight: str = "car_cost_current",
     bike_weight: str = "bike_cost_current",
     corridor_hops: int = 2,
-    min_arcs_per_od: int = 300,
-    max_arcs_per_od: Optional[int] = None,
     include_car_path: bool = True,
     include_bike_path: bool = True,
-    key: int = 0,
 ) -> dict[int, set[Arc]]:
     """
     Build per-OD allowed arcs for spatial relaxation (Wiedemann-style).
@@ -271,28 +211,13 @@ def build_od_allowed_arcs(
             od_allowed[p] = set()
             continue
 
-        _, arcs_corr, hops = _expand_corridor_with_soft_fallback(
+        arcs_corr = _expand_corridor(
             G_seg,
             seed_segs,
             arc_to_seg,
             seg_to_arcs,
             corridor_hops=corridor_hops,
-            min_arcs_per_od=min_arcs_per_od,
         )
-
-        if max_arcs_per_od is not None and len(arcs_corr) > max_arcs_per_od:
-            ordered_segs = _ordered_segments_bfs(
-                G_seg,
-                seed_segs,
-                arc_to_seg,
-                hops=hops,
-                key=key,
-            )
-            arcs_corr = _trim_arcs_with_hard_cap(
-                ordered_segs,
-                seg_to_arcs,
-                max_arcs_per_od,
-            )
 
         od_allowed[p] = arcs_corr
 
