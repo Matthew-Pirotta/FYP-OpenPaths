@@ -5,6 +5,7 @@ import random
 import pandas as pd
 import osmnx as ox
 from collections import Counter
+from constants import OD, ODPair
 
 
 DEFAULT_BETA = 0.001
@@ -294,16 +295,6 @@ def gen_OD(
     ods = [(o, d, w) for (o, d), w in od_counts.items()]
 
     return ods
-
-
-from typing import NamedTuple
-
-class ODPair(NamedTuple):
-    origin: int
-    destination: int
-    bike_weight: float
-    car_weight: float
-    is_auxiliary: bool
 
 def prepare_OD_for_solver(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
     """

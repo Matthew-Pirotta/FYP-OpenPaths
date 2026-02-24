@@ -1,7 +1,6 @@
 #TODO cleanup class by seperating codings constants and config constants
-
-
 from enum import StrEnum, auto
+from typing import NamedTuple
 
 class SafetyClass(StrEnum):
     VERY_SAFE = "very_safe"
@@ -41,6 +40,15 @@ FIETSSTRAAT_SPEED_KMH = 30.0
 DEFUALT_MAXIUM_SPEED_KMH = 60.0 #Maltese highway code for built up areas
 
 
+
+class ODPair(NamedTuple):
+    origin: int
+    destination: int
+    bike_weight: float
+    car_weight: float
+    is_auxiliary: bool
+
+
 Arc = tuple[int, int, int]
 Seg = tuple[int, int, int] 
-OD = tuple[int, int, float]
+OD = list[ODPair]

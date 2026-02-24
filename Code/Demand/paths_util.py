@@ -5,6 +5,7 @@ from constants import Arc, OD, Seg
 from networkx import MultiDiGraph
 import graph_util
 
+#TODO depricated
 def total_cost_from_paths(G, paths, weight_attr):
     total = 0.0
     for (o, d, w), path in paths.items():

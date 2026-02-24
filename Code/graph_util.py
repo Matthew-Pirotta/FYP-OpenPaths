@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 import constants
 from constants import SafetyClass
 from PreProcessing import enrich_attributes
+from typing import Literal
 
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
@@ -33,6 +34,12 @@ def make_region_subgraph(G: MultiDiGraph, region: str) -> MultiDiGraph:
 
 def make_locality_subgraph(G:MultiDiGraph, locality) -> MultiDiGraph:
     return _filter_edges(G, lambda d: locality in d.get("localities"))
+
+def make_highway_subgraph(G:MultiDiGraph,
+                           road_type:Literal["primary", "residential", "service", "track", "tertiary", "secondary"]) -> MultiDiGraph:
+    return _filter_edges(G, lambda d: d.get("highway") == road_type)
+
+
 
 def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
