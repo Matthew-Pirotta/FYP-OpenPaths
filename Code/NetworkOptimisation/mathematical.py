@@ -12,7 +12,7 @@ from gurobipy import GRB
 import copy
 from typing import Optional, Callable
 
-from Demand import paths_util
+from Demand import paths_util, ODGeneration
 import graph_util
 
 def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_remaining_frac:float, C0):
@@ -253,8 +253,7 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
 
 Arc = tuple
 Seg = tuple
-ODPair = tuple[int, int, float]
-OD = list[ODPair]
+OD = list[ODGeneration.ODPair]
 
 
 def _prepare_flow_lp_data(
@@ -351,7 +350,11 @@ def _add_flow_block(
     od_arcs_by_idx: dict[int, set[Arc]] = {}
     all_arcs_set = set(all_arcs)
 
-    for p, (s, t, w) in enumerate(OD):
+    for p, od in enumerate(OD):
+        s, t = od.origin, od.destination
+        phi = 1.0  # Wiedemann-style; keep 1.0 even for auxiliary if you want connectivity
+
+
         arcs_p = od_allowed_arcs.get(p, set()) if od_allowed_arcs is not None else all_arcs_set
         od_arcs_by_idx[p] = arcs_p
 
@@ -375,7 +378,7 @@ def _add_flow_block(
             f_b_on_arc[a].append(vb)
 
         for i in nodes:
-            rhs = float(w) if i == s else -float(w) if i == t else 0.0
+            rhs = phi if i == s else -phi if i == t else 0.0
             out_car = gp.quicksum(f_c_var[(p, a)] for a in out_p.get(i, []))
             in_car = gp.quicksum(f_c_var[(p, a)] for a in in_p.get(i, []))
             m.addConstr(out_car - in_car == rhs, name=f"car_cons_{p}_{i}")
@@ -509,17 +512,43 @@ def solve_flow_lp(
     )
 
     obj = gp.LinExpr()
-    for p, (_, _, w) in enumerate(OD):
+    for p, (_, _, omega_b, omega_c, is_aux) in enumerate(OD):
+        # If/when you add auxiliary ODs, just keep omega_* = 0.0 for them.
+        # (You can ignore is_aux and rely purely on omega values.)
         for a in od_arcs_by_idx[p]:
-            obj += w * gamma * t_c[a] * f_c_var[(p, a)]
-            obj += w * t_b[a] * f_b_var[(p, a)]
-            obj += w * t_beta[a] * f_beta_var[(p, a)]
+            # cars
+            obj += omega_c * gamma * t_c[a] * f_c_var[(p, a)]
+            # bikes (dedicated + shared)
+            obj += omega_b * t_b[a] * f_b_var[(p, a)]
+            obj += omega_b * t_beta[a] * f_beta_var[(p, a)]
     m.setObjective(obj, GRB.MINIMIZE)
 
     # Kept for API compatibility. Shared-bike caps are intentionally disabled.
     _ = cap_shared_bike_flow, shared_bike_cap_multiplier
 
     m.optimize()
+
+    if m.status == GRB.INF_OR_UNBD:
+        m.Params.DualReductions = 0
+        m.optimize()
+
+    if m.status == GRB.INFEASIBLE:
+        m.computeIIS()
+        m.write("flow_lane_lp_debug.lp")   # full model
+        m.write("flow_lane_lp_iis.ilp")    # infeasible core
+
+        print("IIS constraints:")
+        for c in m.getConstrs():
+            if c.IISConstr:
+                print(f"  {c.ConstrName}")
+
+        print("IIS variable bounds:")
+        for v in m.getVars():
+            if v.IISLB or v.IISUB:
+                print(f"  {v.VarName} LB={v.LB} UB={v.UB} IISLB={v.IISLB} IISUB={v.IISUB}")
+
+        raise RuntimeError("solve_flow_lp infeasible (status 3). IIS written to flow_lane_lp_iis.ilp")
+
 
     if m.status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
         raise RuntimeError(f"solve_flow_lp failed with status {m.status}")
@@ -535,7 +564,7 @@ def solve_flow_lp(
 
 def _score_segments_for_rounding(
     G: MultiDiGraph,
-    OD_list: list[OD],
+    OD: OD,
     seg_to_arcs: dict[Seg, list[Arc]],
     eligible_bike_arcs: set[Arc],
     fixed_bike_1: set[Arc],
@@ -555,7 +584,7 @@ def _score_segments_for_rounding(
             continue
 
         flow_fac = 0.0
-        for p in range(len(OD_list)):
+        for p in range(len(OD)):
             if (p, a) in f_b:
                 flow_fac += float(f_b[(p, a)])
 
@@ -613,13 +642,12 @@ def _apply_segment_fixings(
 
 def round_lp_solution_segment_aware(
     G,
-    OD_list: list[OD],
+    OD: OD,
     seg_to_arcs: dict[Seg, list[Arc]],
     arc_to_seg: dict[Arc, Seg],
     Lambda_seg: dict[Seg, float],
     eligible_bike_arcs: set[Arc],
     *,
-    solve_flow_lp_fn: Callable,
     gamma: float,
     k_fix: int,
     budget_bike_lanes: int,
@@ -642,9 +670,9 @@ def round_lp_solution_segment_aware(
     while len(fixed_bike_1) < budget_bike_lanes:
         rounds += 1
 
-        _, lambda_b, _, f_b, _, obj = solve_flow_lp_fn(
+        _, lambda_b, _, f_b, _, obj = solve_flow_lp(
             G=G,
-            OD=OD_list,
+            OD=OD,
             seg_to_arcs=seg_to_arcs,
             Lambda_seg=Lambda_seg,
             eligible_bike_arcs=eligible_bike_arcs,
@@ -661,7 +689,7 @@ def round_lp_solution_segment_aware(
 
         arc_score, seg_score = _score_segments_for_rounding(
             G=G,
-            OD_list=OD_list,
+            OD=OD,
             seg_to_arcs=seg_to_arcs,
             eligible_bike_arcs=eligible_bike_arcs,
             fixed_bike_1=fixed_bike_1,

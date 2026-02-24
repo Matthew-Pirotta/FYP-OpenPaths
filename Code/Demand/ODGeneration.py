@@ -147,8 +147,14 @@ def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng
         if len(destinations) == 0:
             raise ValueError("No destinations within max_dist")
 
-    # Gravity weights
-    weights = np.exp(-beta * distances.values)
+    # Gravity weights = destination attractiveness * distance decay
+    if "weight" in destinations.columns:
+        attractiveness = destinations["weight"].to_numpy(dtype=float)
+    else:
+        attractiveness = np.ones(len(destinations), dtype=float)
+    weights = attractiveness * np.exp(-beta * distances.values)
+ 
+    
 
     # Normalize
     probs = weights / weights.sum()
@@ -288,3 +294,49 @@ def gen_OD(
     ods = [(o, d, w) for (o, d), w in od_counts.items()]
 
     return ods
+
+
+from typing import NamedTuple
+
+class ODPair(NamedTuple):
+    origin: int
+    destination: int
+    bike_weight: float
+    car_weight: float
+    is_auxiliary: bool
+
+def prepare_OD_for_solver(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
+    """
+    Returns a normalized list of ODPair objects for the flow solver.
+    """
+    # 1. Generate raw ODPairs
+    raw_od = [
+        ODPair(
+            origin=o, 
+            destination=d, 
+            bike_weight=float(w) * bike_share, 
+            car_weight=float(w) * (1.0 - bike_share), 
+            is_auxiliary=False
+        )
+        for o, d, w in ods_counts
+    ]
+
+    # 2. Calculate scaling factor (normalize by mean total weight)
+    total_weights = [p.bike_weight + p.car_weight for p in raw_od if (p.bike_weight + p.car_weight) > 0]
+    
+    if not total_weights:
+        return raw_od
+
+    scale = len(total_weights) / sum(total_weights)
+
+    # 3. Return scaled NamedTuples
+    return [
+        ODPair(
+            p.origin, 
+            p.destination, 
+            p.bike_weight * scale, 
+            p.car_weight * scale, 
+            p.is_auxiliary
+        )
+        for p in raw_od
+    ]
