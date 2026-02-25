@@ -735,4 +735,6 @@ def round_lp_solution_segment_aware(
             print(f"[round {rounds}] obj={obj:.4g} fixed={len(fixed_bike_1)}/{budget_bike_lanes} "
                   f"(+{fixed_this_round}) top_seg_score={seg_score[0][0]:.4g}")
 
-    return fixed_bike_1, fixed_bike_0, history
+    newly_fixed_bike_1 = fixed_bike_1 - fixed_bike_1_init
+    newly_fixed_bike_0 = fixed_bike_0 - fixed_bike_0_init
+    return newly_fixed_bike_1, newly_fixed_bike_0, history

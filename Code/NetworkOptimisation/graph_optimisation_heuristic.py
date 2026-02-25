@@ -2,6 +2,7 @@ from networkx import MultiDiGraph
 import graph_util as graph_util
 import copy
 import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import osmnx as ox
 import pandas as pd
 import inspect
@@ -87,11 +88,11 @@ def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, 
 
 
     if parallel:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(run_locality_task, task): task[0] for task in tasks}
 
             with tqdm(total=len(futures), desc="Localities", unit="loc") as pbar:
-                for future in concurrent.futures.as_completed(futures):
+                for future in as_completed(futures):
                     locality_name = futures[future]
                     try:
                         locality_results = future.result()
@@ -102,6 +103,3 @@ def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, 
 
     df_results = pd.DataFrame(results)
     return df_results
-
-if __name__ == "__main__":
-    print("hello????")
