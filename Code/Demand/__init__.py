@@ -8,7 +8,7 @@ from .ODGeneration import (
     sample_destination_gravity,
     gen_random_OD_counter,
     gen_demand_OD_counter,
-    gen_OD,
+    gen_OD_trips,
 )
 
 from .paths_util import (
@@ -30,7 +30,7 @@ __all__ = [
     "sample_destination_gravity",
     "gen_random_OD_counter",
     "gen_demand_OD_counter",
-    "gen_OD",
+    "gen_OD_trips",
 
     # Path utilities
     "total_cost_from_paths",

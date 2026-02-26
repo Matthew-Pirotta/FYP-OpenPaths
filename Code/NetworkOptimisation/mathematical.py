@@ -10,6 +10,7 @@ from networkx import MultiDiGraph
 import gurobipy as gp
 from gurobipy import GRB
 import copy
+import random
 from typing import Optional, Callable
 
 from Demand import paths_util, ODGeneration
@@ -355,7 +356,12 @@ def _add_flow_block(
         phi = 1.0  # Wiedemann-style; keep 1.0 even for auxiliary if you want connectivity
 
 
-        arcs_p = od_allowed_arcs.get(p, set()) if od_allowed_arcs is not None else all_arcs_set
+        if od_allowed_arcs is None:
+            arcs_p = all_arcs_set
+        else:
+            # Fallback to all arcs when OD-specific corridors are not supplied
+            # (e.g., newly added auxiliary ODs).
+            arcs_p = od_allowed_arcs.get(p, all_arcs_set)
         od_arcs_by_idx[p] = arcs_p
 
         out_p: dict[int, list[Arc]] = defaultdict(list)
@@ -421,6 +427,7 @@ def solve_flow_lp(
     # solver options
     time_limit: Optional[float] = None,
     verbose: bool = False,
+    print_problem_stats: bool = False,
 ) -> tuple[
     dict[Arc, float],  # lambda_c
     dict[Arc, float],  # lambda_b
@@ -511,10 +518,23 @@ def solve_flow_lp(
         lambda_b_var=lambda_b_var,
     )
 
+    if print_problem_stats:
+        decision_nodes = {n for u, v, _ in eligible_bike_arcs for n in (u, v)}
+        m.update()
+        print(
+            "[lp-stats] "
+            f"decision_nodes={len(decision_nodes)} "
+            f"decision_edges={len(eligible_bike_arcs)} "
+            f"od_size={len(OD)} "
+            f"num_vars={m.NumVars}"
+        )
+
     obj = gp.LinExpr()
-    for p, (_, _, omega_b, omega_c, is_aux) in enumerate(OD):
-        # If/when you add auxiliary ODs, just keep omega_* = 0.0 for them.
-        # (You can ignore is_aux and rely purely on omega values.)
+    for p, od in enumerate(OD):
+        # Auxiliary ODs should have omega_* = 0.0 so they enforce connectivity
+        # through conservation constraints without contributing to objective.
+        omega_b = float(od.bike_weight)
+        omega_c = float(od.car_weight)
         for a in od_arcs_by_idx[p]:
             # cars
             obj += omega_c * gamma * t_c[a] * f_c_var[(p, a)]
@@ -661,11 +681,30 @@ def round_lp_solution_segment_aware(
     bike_dedicated_cost_attr: str = "bike_cost_dedicated",
     min_lambda_to_consider: float = 1e-6,
     verbose: bool = True,
+    print_problem_stats: bool = False,
 ):
-    fixed_bike_1: set[Arc] = set(fixed_bike_1_init or set())
-    fixed_bike_0: set[Arc] = set(fixed_bike_0_init or set())
+    initial_fixed_bike_1: set[Arc] = set(fixed_bike_1_init or set())
+    initial_fixed_bike_0: set[Arc] = set(fixed_bike_0_init or set())
+    fixed_bike_1: set[Arc] = set(initial_fixed_bike_1)
+    fixed_bike_0: set[Arc] = set(initial_fixed_bike_0)
+
     history = []
     rounds = 0
+
+    import networkx as nx
+
+    p = 34
+    od = OD[p]                 # exact list passed into solve_flow_lp
+    arcs = od_allowed_arcs[p]       # exact dict passed into solve_flow_lp
+    s, t = od.origin, od.destination
+
+    out_s = [a for a in arcs if a[0] == s]
+    in_t  = [a for a in arcs if a[1] == t]
+
+    H = nx.DiGraph((u, v) for u, v, k in arcs)
+    has_path = s in H and t in H and nx.has_path(H, s, t)
+
+    print(p, s, t, len(arcs), len(out_s), len(in_t), has_path, od.is_auxiliary)
 
     while len(fixed_bike_1) < budget_bike_lanes:
         rounds += 1
@@ -685,6 +724,7 @@ def round_lp_solution_segment_aware(
             bike_shared_cost_attr=bike_shared_cost_attr,
             bike_dedicated_cost_attr=bike_dedicated_cost_attr,
             verbose=False,
+            print_problem_stats=print_problem_stats,
         )
 
         arc_score, seg_score = _score_segments_for_rounding(
@@ -735,6 +775,6 @@ def round_lp_solution_segment_aware(
             print(f"[round {rounds}] obj={obj:.4g} fixed={len(fixed_bike_1)}/{budget_bike_lanes} "
                   f"(+{fixed_this_round}) top_seg_score={seg_score[0][0]:.4g}")
 
-    newly_fixed_bike_1 = fixed_bike_1 - fixed_bike_1_init
-    newly_fixed_bike_0 = fixed_bike_0 - fixed_bike_0_init
+    newly_fixed_bike_1 = fixed_bike_1 - initial_fixed_bike_1
+    newly_fixed_bike_0 = fixed_bike_0 - initial_fixed_bike_0
     return newly_fixed_bike_1, newly_fixed_bike_0, history

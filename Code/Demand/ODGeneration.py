@@ -6,6 +6,7 @@ import pandas as pd
 import osmnx as ox
 from collections import Counter
 from constants import OD, ODPair
+from typing import Optional
 
 
 DEFAULT_BETA = 0.001
@@ -238,7 +239,7 @@ def gen_demand_OD_counter(
     return od_counts
 
 
-def gen_OD(
+def gen_OD_trips(
     G,
     gdf_residential,
     gdf_destinations,
@@ -296,7 +297,7 @@ def gen_OD(
 
     return ods
 
-def prepare_OD_for_solver(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
+def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
     """
     Returns a normalized list of ODPair objects for the flow solver.
     """
@@ -331,3 +332,64 @@ def prepare_OD_for_solver(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
         )
         for p in raw_od
     ]
+
+
+def append_auxiliary_chain_od_pairs(
+    OD_demand: OD,
+    rng,
+    nodes: list[int],
+    shuffle_nodes: bool = True,
+) -> OD:
+    """
+    Augment demand OD with chained auxiliary OD pairs:
+      (v1,v2), (v2,v3), ..., (v{n-1},vn), (vn,v1)
+
+    Auxiliary pairs are assigned zero objective weights:
+      bike_weight = 0.0, car_weight = 0.0, is_auxiliary = True
+
+    Notes
+    -----
+    - Duplicates (o,d) already present in OD_demand are not added again.
+    - If fewer than 2 nodes are provided, input OD is returned unchanged.
+    """
+    od_aug: OD = list(OD_demand)
+    unique_nodes = list(dict.fromkeys(nodes))
+    if len(unique_nodes) < 2:
+        return od_aug
+
+    if shuffle_nodes:
+        rng.shuffle(unique_nodes)
+
+    existing_pairs = {(od.origin, od.destination) for od in od_aug}
+
+    for i in range(len(unique_nodes) - 1):
+        o = int(unique_nodes[i])
+        d = int(unique_nodes[i + 1])
+        if (o, d) in existing_pairs:
+            continue
+        od_aug.append(
+            ODPair(
+                origin=o,
+                destination=d,
+                bike_weight=0.0,
+                car_weight=0.0,
+                is_auxiliary=True,
+            )
+        )
+        existing_pairs.add((o, d))
+
+    # Close the chain with (vn, v1)
+    o = int(unique_nodes[-1])
+    d = int(unique_nodes[0])
+    if (o, d) not in existing_pairs:
+        od_aug.append(
+            ODPair(
+                origin=o,
+                destination=d,
+                bike_weight=0.0,
+                car_weight=0.0,
+                is_auxiliary=True,
+            )
+        )
+
+    return od_aug

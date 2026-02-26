@@ -175,7 +175,7 @@ def _expand_corridor(
 def build_od_allowed_arcs(
     G: MultiDiGraph,
     G_seg: MultiDiGraph,
-    OD_list: list[tuple[int, int, float]],
+    OD_list: OD,
     seg_to_arcs: dict[Seg, list[Arc]],
     arc_to_seg: dict[Arc, Seg],
     *,
@@ -194,11 +194,11 @@ def build_od_allowed_arcs(
 
     od_allowed: dict[int, set[Arc]] = {}
 
-    for p, (o, d, _) in enumerate(OD_list):
+    for p, od in enumerate(OD_list):
         seed_segs = _collect_seed_segments_for_od(
             G,
-            o,
-            d,
+            od.origin,
+            od.destination,
             arc_to_seg,
             include_car_path=include_car_path,
             include_bike_path=include_bike_path,
