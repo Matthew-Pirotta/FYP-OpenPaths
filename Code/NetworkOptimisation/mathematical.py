@@ -292,6 +292,7 @@ def _add_capacity_block(
     m: gp.Model,
     all_arcs: list[Arc],
     eligible_bike_arcs: set[Arc],
+    car_arcs:set[Arc],
     fixed_bike_1: set[Arc],
     fixed_bike_0: set[Arc],
     seg_to_arcs: dict[Seg, list[Arc]],
@@ -302,7 +303,12 @@ def _add_capacity_block(
     lambda_b_var: dict[Arc, gp.Var] = {}
     for a in all_arcs:
         u, v, k = a
-        lambda_c_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lc_{u}_{v}_{k}")
+        if a in car_arcs:
+            lambda_c_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lc_{u}_{v}_{k}")
+        else:
+            # no car capacity on bike-only arcs
+            lambda_c_var[a] = m.addVar(lb=0.0, ub=0.0, vtype=GRB.CONTINUOUS, name=f"lc_{u}_{v}_{k}_fixed0")
+
         if a in eligible_bike_arcs:
             lambda_b_var[a] = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"lb_{u}_{v}_{k}")
         else:
@@ -332,67 +338,114 @@ def _add_capacity_block(
 def _add_flow_block(
     m: gp.Model,
     OD: OD,
-    nodes: list[int],
     all_arcs: list[Arc],
-    od_allowed_arcs: Optional[dict[int, set[Arc]]],
     lambda_c_var: dict[Arc, gp.Var],
     lambda_b_var: dict[Arc, gp.Var],
+    car_arcs: set[Arc],
+    bike_arcs: set[Arc],
+    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,
+
 ) -> tuple[
-    dict[tuple[int, Arc], gp.Var],
-    dict[tuple[int, Arc], gp.Var],
-    dict[tuple[int, Arc], gp.Var],
-    dict[int, set[Arc]],
+    dict[tuple[int, Arc], gp.Var],  # f_c
+    dict[tuple[int, Arc], gp.Var],  # f_b
+    dict[tuple[int, Arc], gp.Var],  # f_beta
+    dict[int, set[Arc]],            # od_car_arcs_by_idx (final used arcs)
+    dict[int, set[Arc]],            # od_bike_arcs_by_idx (final used arcs)
 ]:
     f_c_var: dict[tuple[int, Arc], gp.Var] = {}
     f_b_var: dict[tuple[int, Arc], gp.Var] = {}
     f_beta_var: dict[tuple[int, Arc], gp.Var] = {}
     f_c_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
     f_b_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
-    od_arcs_by_idx: dict[int, set[Arc]] = {}
+    od_car_arcs_by_idx: dict[int, set[Arc]] = {}
+    od_bike_arcs_by_idx: dict[int, set[Arc]] = {}
+
     all_arcs_set = set(all_arcs)
 
     for p, od in enumerate(OD):
         s, t = od.origin, od.destination
         phi = 1.0  # Wiedemann-style; keep 1.0 even for auxiliary if you want connectivity
 
-
-        if od_allowed_arcs is None:
-            arcs_p = all_arcs_set
+        arcs_car = None
+        if od_allowed_arcs_car is None:
+            arcs_car = car_arcs
         else:
-            # Fallback to all arcs when OD-specific corridors are not supplied
-            # (e.g., newly added auxiliary ODs).
-            arcs_p = od_allowed_arcs.get(p, all_arcs_set)
-        od_arcs_by_idx[p] = arcs_p
+            arcs_car = od_allowed_arcs_car[p]
 
-        out_p: dict[int, list[Arc]] = defaultdict(list)
-        in_p: dict[int, list[Arc]] = defaultdict(list)
-        for a in arcs_p:
+        arcs_bike = None
+        if od_allowed_arcs_bike is None:
+            arcs_bike = bike_arcs
+        else:
+            arcs_bike = od_allowed_arcs_bike[p]
+        
+
+
+        # store final supports
+        od_car_arcs_by_idx[p] = arcs_car
+        od_bike_arcs_by_idx[p] = arcs_bike
+
+        # --- adjacency for conservation ---
+        out_c: dict[int, list[Arc]] = defaultdict(list)
+        in_c: dict[int, list[Arc]] = defaultdict(list)
+        nodes_c: set[int] = {s, t}
+
+        for a in arcs_car:
             u, v, _ = a
-            out_p[u].append(a)
-            in_p[v].append(a)
+            out_c[u].append(a)
+            in_c[v].append(a)
+            nodes_c.add(u); nodes_c.add(v)
 
-        for a in arcs_p:
+        out_b: dict[int, list[Arc]] = defaultdict(list)
+        in_b: dict[int, list[Arc]] = defaultdict(list)
+        nodes_b: set[int] = {s, t}
+
+        for a in arcs_bike:
+            u, v, _ = a
+            out_b[u].append(a)
+            in_b[v].append(a)
+            nodes_b.add(u); nodes_b.add(v)
+
+        # --- variables ---
+        # car + shared bike vars on car arcs
+        for a in arcs_car:
             u, v, k = a
             vc = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fc_{p}_{u}_{v}_{k}")
-            vb = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fb_{p}_{u}_{v}_{k}")
             vbeta = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fbe_{p}_{u}_{v}_{k}")
-
             f_c_var[(p, a)] = vc
-            f_b_var[(p, a)] = vb
             f_beta_var[(p, a)] = vbeta
             f_c_on_arc[a].append(vc)
+
+        # dedicated bike vars on bike arcs
+        for a in arcs_bike:
+            u, v, k = a
+            vb = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fb_{p}_{u}_{v}_{k}")
+            f_b_var[(p, a)] = vb
             f_b_on_arc[a].append(vb)
 
-        for i in nodes:
-            rhs = phi if i == s else -phi if i == t else 0.0
-            out_car = gp.quicksum(f_c_var[(p, a)] for a in out_p.get(i, []))
-            in_car = gp.quicksum(f_c_var[(p, a)] for a in in_p.get(i, []))
-            m.addConstr(out_car - in_car == rhs, name=f"car_cons_{p}_{i}")
+        # --- conservation ---
+        # Cars: only over nodes touched by car corridor (+ s,t)
+        for i in nodes_c:
+            rhs = phi if i == s else (-phi if i == t else 0.0)
+            out_flow = gp.quicksum(f_c_var[(p, a)] for a in out_c.get(i, []))
+            in_flow  = gp.quicksum(f_c_var[(p, a)] for a in in_c.get(i, []))
+            m.addConstr(out_flow - in_flow == rhs, name=f"car_cons_{p}_{i}")
 
-            out_bike = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in out_p.get(i, []))
-            in_bike = gp.quicksum(f_b_var[(p, a)] + f_beta_var[(p, a)] for a in in_p.get(i, []))
-            m.addConstr(out_bike - in_bike == rhs, name=f"bike_cons_{p}_{i}")
+        # Bikes: conservation on (dedicated + shared)
+        # dedicated on bike arcs, shared on car arcs
+        nodes_both = nodes_b | nodes_c
+        for i in nodes_both:
+            rhs = phi if i == s else (-phi if i == t else 0.0)
 
+            out_ded = gp.quicksum(f_b_var[(p, a)] for a in out_b.get(i, []))
+            in_ded  = gp.quicksum(f_b_var[(p, a)] for a in in_b.get(i, []))
+
+            out_sh  = gp.quicksum(f_beta_var[(p, a)] for a in out_c.get(i, []))
+            in_sh   = gp.quicksum(f_beta_var[(p, a)] for a in in_c.get(i, []))
+
+            m.addConstr((out_ded + out_sh) - (in_ded + in_sh) == rhs, name=f"bike_cons_{p}_{i}")
+
+    # --- capacity constraints (global) ---
     for a in all_arcs:
         u, v, k = a
         if a in f_c_on_arc:
@@ -401,7 +454,7 @@ def _add_flow_block(
             m.addConstr(gp.quicksum(f_b_on_arc[a]) <= lambda_b_var[a], name=f"cap_bike_{u}_{v}_{k}")
 
     m.update()
-    return f_c_var, f_b_var, f_beta_var, od_arcs_by_idx
+    return f_c_var, f_b_var, f_beta_var, od_car_arcs_by_idx, od_bike_arcs_by_idx
 
 
 def solve_flow_lp(
@@ -413,6 +466,8 @@ def solve_flow_lp(
     fixed_bike_1: set[Arc], #arcs fixed to have a bike lane
     fixed_bike_0: set[Arc], #arcs fixed to have no bike lane (optional)
     gamma: float,
+    car_arcs,
+    bike_arcs,
     *,
     alpha_bike_space: float = 0.5,
     # edge attribute names
@@ -423,8 +478,8 @@ def solve_flow_lp(
     cap_shared_bike_flow: bool = False,          # typically False (Wiedemann leaves f_beta unconstrained)
     shared_bike_cap_multiplier: float = 1e6,     # if cap_shared_bike_flow=True, cap is multiplier * Lambda (big)
     # optional size control
-    od_allowed_arcs: Optional[dict[int, set[Arc]]] = None,
-    # solver options
+    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,    # solver options
     time_limit: Optional[float] = None,
     verbose: bool = False,
     print_problem_stats: bool = False,
@@ -498,9 +553,13 @@ def solve_flow_lp(
     if time_limit is not None:
         m.Params.TimeLimit = float(time_limit)
 
+    #TODO
+    # IMPORTANT (recommended): restrict lambda_c on non-car arcs to ub=0 inside _add_capacity_block.
+    # If you haven't patched that, you can still run, but cars could theoretically use bike-only arcs.
     lambda_c_var, lambda_b_var = _add_capacity_block(
         m=m,
         all_arcs=all_arcs,
+        car_arcs=car_arcs,
         eligible_bike_arcs=eligible_bike_arcs,
         fixed_bike_1=fixed_bike_1,
         fixed_bike_0=fixed_bike_0,
@@ -508,14 +567,17 @@ def solve_flow_lp(
         Lambda_seg=Lambda_seg,
         alpha_bike_space=alpha_bike_space,
     )
-    f_c_var, f_b_var, f_beta_var, od_arcs_by_idx = _add_flow_block(
+
+    f_c_var, f_b_var, f_beta_var, od_car_arcs_by_idx, od_bike_arcs_by_idx = _add_flow_block(
         m=m,
         OD=OD,
-        nodes=nodes,
         all_arcs=all_arcs,
-        od_allowed_arcs=od_allowed_arcs,
         lambda_c_var=lambda_c_var,
         lambda_b_var=lambda_b_var,
+        car_arcs=car_arcs,
+        bike_arcs=bike_arcs,
+        od_allowed_arcs_car=od_allowed_arcs_car,
+        od_allowed_arcs_bike=od_allowed_arcs_bike,
     )
 
     if print_problem_stats:
@@ -531,21 +593,22 @@ def solve_flow_lp(
 
     obj = gp.LinExpr()
     for p, od in enumerate(OD):
-        # Auxiliary ODs should have omega_* = 0.0 so they enforce connectivity
-        # through conservation constraints without contributing to objective.
         omega_b = float(od.bike_weight)
         omega_c = float(od.car_weight)
-        for a in od_arcs_by_idx[p]:
-            # cars
+
+        # cars on car corridor
+        for a in od_car_arcs_by_idx[p]:
             obj += omega_c * gamma * t_c[a] * f_c_var[(p, a)]
-            # bikes (dedicated + shared)
+
+        # bikes: dedicated on bike corridor
+        for a in od_bike_arcs_by_idx[p]:
             obj += omega_b * t_b[a] * f_b_var[(p, a)]
+
+        # bikes: shared on car corridor
+        for a in od_car_arcs_by_idx[p]:
             obj += omega_b * t_beta[a] * f_beta_var[(p, a)]
+
     m.setObjective(obj, GRB.MINIMIZE)
-
-    # Kept for API compatibility. Shared-bike caps are intentionally disabled.
-    _ = cap_shared_bike_flow, shared_bike_cap_multiplier
-
     m.optimize()
 
     if m.status == GRB.INF_OR_UNBD:
@@ -667,6 +730,8 @@ def round_lp_solution_segment_aware(
     arc_to_seg: dict[Arc, Seg],
     Lambda_seg: dict[Seg, float],
     eligible_bike_arcs: set[Arc],
+    car_arcs,
+    bike_arcs,
     *,
     gamma: float,
     k_fix: int,
@@ -675,7 +740,8 @@ def round_lp_solution_segment_aware(
     fixed_bike_1_init: Optional[set[Arc]] = None,  #arcs fixed to have a bike lane
     fixed_bike_0_init: Optional[set[Arc]] = None,  #arcs fixed to have no bike lane (optional)
     alpha_bike_space: float = 0.5,
-    od_allowed_arcs: Optional[dict[int, set[Arc]]] = None,
+    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,    # solver options    
     car_cost_attr: str = "car_cost_current",
     bike_shared_cost_attr: str = "bike_cost_shared",
     bike_dedicated_cost_attr: str = "bike_cost_dedicated",
@@ -691,21 +757,6 @@ def round_lp_solution_segment_aware(
     history = []
     rounds = 0
 
-    import networkx as nx
-
-    p = 34
-    od = OD[p]                 # exact list passed into solve_flow_lp
-    arcs = od_allowed_arcs[p]       # exact dict passed into solve_flow_lp
-    s, t = od.origin, od.destination
-
-    out_s = [a for a in arcs if a[0] == s]
-    in_t  = [a for a in arcs if a[1] == t]
-
-    H = nx.DiGraph((u, v) for u, v, k in arcs)
-    has_path = s in H and t in H and nx.has_path(H, s, t)
-
-    print(p, s, t, len(arcs), len(out_s), len(in_t), has_path, od.is_auxiliary)
-
     while len(fixed_bike_1) < budget_bike_lanes:
         rounds += 1
 
@@ -718,8 +769,11 @@ def round_lp_solution_segment_aware(
             fixed_bike_1=fixed_bike_1,
             fixed_bike_0=fixed_bike_0,
             gamma=gamma,
+            car_arcs = car_arcs,
+            bike_arcs=bike_arcs,
             alpha_bike_space=alpha_bike_space,
-            od_allowed_arcs=od_allowed_arcs,
+            od_allowed_arcs_bike=od_allowed_arcs_bike,
+            od_allowed_arcs_car=od_allowed_arcs_car,
             car_cost_attr=car_cost_attr,
             bike_shared_cost_attr=bike_shared_cost_attr,
             bike_dedicated_cost_attr=bike_dedicated_cost_attr,

@@ -131,7 +131,7 @@ def plot_od_allowed_corridor(
 
     #TODO this should be a paramter that is passed
     seed_segs, arcs_corr, _ = paths_util.build_od_allowed_arcs(
-        G=G,
+        G_master=G,
         G_seg=G_seg,
         OD_list=od_single,
         seg_to_arcs=seg_to_arcs,

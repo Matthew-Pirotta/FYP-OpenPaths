@@ -82,8 +82,7 @@ def _path_to_arcs(path: list[int]) -> list[Arc]:
     return [(u, v, 0) for u, v in zip(path[:-1], path[1:])]
 
 #region build_od_allowed_arcs
-
-def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int, arc_to_seg:dict[Arc, Seg]) -> set[Seg]:
+def _k_hop_arc_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int) -> set[Arc]:
     """Expand a set of undirected segments by k hops in the undirected segment graph."""
     if hops <= 0:
         return set(seed_segs)
@@ -101,14 +100,14 @@ def _k_hop_segment_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int,
         a, b, _= seg
         for endpoint in (a, b):
             for x, y, k in G_seg.edges(endpoint, keys=True):
-                seg2 =  arc_to_seg[(x, y, k)]
+                seg2 = x,y,k
                 if seg2 not in visited:
                     visited.add(seg2)
                     q.append((seg2, depth + 1))
 
     return visited
 
-def _collect_path_seed_segments( G: MultiDiGraph, o: int, d: int, weight_attr: str, arc_to_seg: dict[Arc, Seg]) -> set[Seg]:
+def _collect_path_seed_arcs( G: MultiDiGraph, o: int, d: int, weight_attr: str) -> set[Arc]:
     """Shortest path -> arcs -> mapped seed segments."""
     try:
         path_nodes = nx.shortest_path(G, o, d, weight=weight_attr)
@@ -116,12 +115,8 @@ def _collect_path_seed_segments( G: MultiDiGraph, o: int, d: int, weight_attr: s
         return set()
 
     path_arcs = _path_to_arcs(path_nodes)
-    seed_segs: set[Seg] = set()
-    for arc in path_arcs:
-        seg = arc_to_seg.get(arc)
-        if seg is not None:
-            seed_segs.add(seg)
-    return seed_segs
+    seed_arcs = set(path_arcs)
+    return seed_arcs
 
 def _collect_seed_segments_for_od(
     G: MultiDiGraph,
@@ -139,12 +134,12 @@ def _collect_seed_segments_for_od(
 
     if include_car_path:
         seed_segs.update(
-            _collect_path_seed_segments(G, o, d, car_weight, arc_to_seg)
+            _collect_path_seed_arcs(G, o, d, car_weight, arc_to_seg)
         )
 
     if include_bike_path:
         seed_segs.update(
-            _collect_path_seed_segments(G, o, d, bike_weight, arc_to_seg)
+            _collect_path_seed_arcs(G, o, d, bike_weight, arc_to_seg)
         )
 
     return seed_segs
@@ -168,58 +163,42 @@ def _expand_corridor(
     corridor_hops: int,
 ) -> set[Arc]:
     
-    segs_corr = _k_hop_segment_corridor(G_seg, seed_segs, corridor_hops, arc_to_seg)
+    segs_corr = _k_hop_arc_corridor(G_seg, seed_segs, corridor_hops, arc_to_seg)
     arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
     return arcs_corr
 
+#TODO wiedmann might be building it differently from me....
+#TODO maybe it should be segment level idk
 def build_od_allowed_arcs(
-    G: MultiDiGraph,
-    G_seg: MultiDiGraph,
+    G_drive:MultiDiGraph,
+    G_bike:MultiDiGraph,
     OD_list: OD,
-    seg_to_arcs: dict[Seg, list[Arc]],
-    arc_to_seg: dict[Arc, Seg],
-    *,
     car_weight: str = "car_cost_current",
-    bike_weight: str = "bike_cost_current",
+    bike_weight: str = "bike_cost_penalty",
     corridor_hops: int = 2,
-    include_car_path: bool = True,
-    include_bike_path: bool = True,
-) -> tuple[set[Seg],set[Arc],dict[int, set[Arc]]]:
+) -> tuple[dict[int, set[Arc]], dict[int, set[Arc]]]:
     """
-    Build per-OD allowed arcs for spatial relaxation (Wiedemann-style).
+    Build per-OD allowed arcs separately for car and bike, plus a union.
 
     Returns
-    seed_segs, arcs_corr, od_allowed
+    -------
+    od_allowed_car, od_allowed_bike
     """
-
-    od_allowed: dict[int, set[Arc]] = {}
+    od_allowed_car: dict[int, set[Arc]] = {}
+    od_allowed_bike: dict[int, set[Arc]] = {}
 
     for p, od in enumerate(OD_list):
-        seed_segs = _collect_seed_segments_for_od(
-            G,
-            od.origin,
-            od.destination,
-            arc_to_seg,
-            include_car_path=include_car_path,
-            include_bike_path=include_bike_path,
-            car_weight=car_weight,
-            bike_weight=bike_weight,
-        )
+        car_seed_segs: set[Seg] = set()
+        bike_seed_segs: set[Seg] = set()
+      
+        car_seed_segs = _collect_path_seed_arcs(G_drive, od.origin, od.destination, car_weight)
+        bike_seed_segs = _collect_path_seed_arcs(G_bike, od.origin, od.destination, bike_weight)
 
-        if not seed_segs:
-            od_allowed[p] = set()
-            continue
+        car_arcs = _k_hop_arc_corridor(G_drive, car_seed_segs, corridor_hops)
+        bike_arcs = _k_hop_arc_corridor(G_bike, bike_seed_segs, corridor_hops)
 
-        arcs_corr = _expand_corridor(
-            G_seg,
-            seed_segs,
-            arc_to_seg,
-            seg_to_arcs,
-            corridor_hops=corridor_hops,
-        )
+        od_allowed_car[p] = car_arcs
+        od_allowed_bike[p] = bike_arcs
 
-        od_allowed[p] = arcs_corr
-
-    return seed_segs, arcs_corr, od_allowed
-
+    return od_allowed_car, od_allowed_bike
 #endregion
