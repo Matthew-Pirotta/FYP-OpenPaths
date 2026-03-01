@@ -76,7 +76,9 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
 
         # Dangerous roads should not be bikeable
         if classification == SafetyClass.DANGEROUS:
-            data["bike_allowed"] = False
+            #TODO NOTE this was set to false orginally, but was causing proble,s
+            #I have now set it true, and made the bikeable subgraph reachable to all nodes
+            data["bike_allowed"] = True
         else:
             data["bike_allowed"] = True
 

@@ -343,8 +343,8 @@ def _add_flow_block(
     lambda_b_var: dict[Arc, gp.Var],
     car_arcs: set[Arc],
     bike_arcs: set[Arc],
-    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
-    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,
+    od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
 
 ) -> tuple[
     dict[tuple[int, Arc], gp.Var],  # f_c
@@ -367,17 +367,21 @@ def _add_flow_block(
         s, t = od.origin, od.destination
         phi = 1.0  # Wiedemann-style; keep 1.0 even for auxiliary if you want connectivity
 
-        arcs_car = None
+        od_key = paths_util.make_od_key(od)
+
         if od_allowed_arcs_car is None:
             arcs_car = car_arcs
         else:
-            arcs_car = od_allowed_arcs_car[p]
+            if od_key not in od_allowed_arcs_car:
+                raise KeyError(f"Missing car allowed-arcs entry for OD key {od_key}")
+            arcs_car = od_allowed_arcs_car[od_key]
 
-        arcs_bike = None
         if od_allowed_arcs_bike is None:
             arcs_bike = bike_arcs
         else:
-            arcs_bike = od_allowed_arcs_bike[p]
+            if od_key not in od_allowed_arcs_bike:
+                raise KeyError(f"Missing bike allowed-arcs entry for OD key {od_key}")
+            arcs_bike = od_allowed_arcs_bike[od_key]
         
 
 
@@ -478,8 +482,8 @@ def solve_flow_lp(
     cap_shared_bike_flow: bool = False,          # typically False (Wiedemann leaves f_beta unconstrained)
     shared_bike_cap_multiplier: float = 1e6,     # if cap_shared_bike_flow=True, cap is multiplier * Lambda (big)
     # optional size control
-    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
-    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,    # solver options
+    od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,    # solver options
     time_limit: Optional[float] = None,
     verbose: bool = False,
     print_problem_stats: bool = False,
@@ -526,8 +530,8 @@ def solve_flow_lp(
 
     Optional arc restriction per OD
     -------------------------------
-    od_allowed_arcs: dict od_idx -> set(arcs)
-      If provided, flow variables for OD od_idx are created ONLY on those arcs.
+    od_allowed_arcs: dict[ODKey, set[Arc]]
+      If provided, flow variables for that OD key are created ONLY on those arcs.
       (Capacities lambda_* are still created for all arcs in seg_to_arcs.)
 
     Returns
@@ -740,8 +744,8 @@ def round_lp_solution_segment_aware(
     fixed_bike_1_init: Optional[set[Arc]] = None,  #arcs fixed to have a bike lane
     fixed_bike_0_init: Optional[set[Arc]] = None,  #arcs fixed to have no bike lane (optional)
     alpha_bike_space: float = 0.5,
-    od_allowed_arcs_car: Optional[dict[int, set[Arc]]] = None,
-    od_allowed_arcs_bike: Optional[dict[int, set[Arc]]] = None,    # solver options    
+    od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,    # solver options    
     car_cost_attr: str = "car_cost_current",
     bike_shared_cost_attr: str = "bike_cost_shared",
     bike_dedicated_cost_attr: str = "bike_cost_dedicated",

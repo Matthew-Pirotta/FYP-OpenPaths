@@ -167,6 +167,19 @@ def _expand_corridor(
     arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
     return arcs_corr
 
+ODKey = tuple[int, int, float, float, bool]
+
+
+def make_od_key(od) -> ODKey:
+    return (
+        int(od.origin),
+        int(od.destination),
+        float(od.bike_weight),
+        float(od.car_weight),
+        bool(od.is_auxiliary),
+    )
+
+
 #TODO wiedmann might be building it differently from me....
 #TODO maybe it should be segment level idk
 def build_od_allowed_arcs(
@@ -176,29 +189,31 @@ def build_od_allowed_arcs(
     car_weight: str = "car_cost_current",
     bike_weight: str = "bike_cost_penalty",
     corridor_hops: int = 2,
-) -> tuple[dict[int, set[Arc]], dict[int, set[Arc]]]:
+) -> tuple[dict[ODKey, set[Arc]], dict[ODKey, set[Arc]]]:
     """
-    Build per-OD allowed arcs separately for car and bike, plus a union.
+    Build per-OD allowed arcs separately for car and bike.
 
     Returns
     -------
     od_allowed_car, od_allowed_bike
+        Dictionaries keyed by ODKey from make_od_key(od).
     """
-    od_allowed_car: dict[int, set[Arc]] = {}
-    od_allowed_bike: dict[int, set[Arc]] = {}
+    od_allowed_car: dict[ODKey, set[Arc]] = {}
+    od_allowed_bike: dict[ODKey, set[Arc]] = {}
 
-    for p, od in enumerate(OD_list):
+    for od in OD_list:
         car_seed_segs: set[Seg] = set()
         bike_seed_segs: set[Seg] = set()
-      
+
         car_seed_segs = _collect_path_seed_arcs(G_drive, od.origin, od.destination, car_weight)
         bike_seed_segs = _collect_path_seed_arcs(G_bike, od.origin, od.destination, bike_weight)
 
         car_arcs = _k_hop_arc_corridor(G_drive, car_seed_segs, corridor_hops)
         bike_arcs = _k_hop_arc_corridor(G_bike, bike_seed_segs, corridor_hops)
 
-        od_allowed_car[p] = car_arcs
-        od_allowed_bike[p] = bike_arcs
+        od_key = make_od_key(od)
+        od_allowed_car[od_key] = car_arcs
+        od_allowed_bike[od_key] = bike_arcs
 
     return od_allowed_car, od_allowed_bike
 #endregion
