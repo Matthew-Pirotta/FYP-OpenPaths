@@ -640,11 +640,12 @@ def solve_flow_lp(
     if m.status not in (GRB.OPTIMAL, GRB.SUBOPTIMAL):
         raise RuntimeError(f"solve_flow_lp failed with status {m.status}")
 
-    lambda_c = {a: float(var.X) for a, var in lambda_c_var.items()}
+    #NOTE these werent be used by the return so i just commented them out to save memory for now
+    lambda_c = {}#{a: float(var.X) for a, var in lambda_c_var.items()}
     lambda_b = {a: float(var.X) for a, var in lambda_b_var.items()}
-    f_c = {(p, a): float(var.X) for (p, a), var in f_c_var.items()}
+    f_c = {} #{(p, a): float(var.X) for (p, a), var in f_c_var.items()}
     f_b = {(p, a): float(var.X) for (p, a), var in f_b_var.items()}
-    f_beta = {(p, a): float(var.X) for (p, a), var in f_beta_var.items()}
+    f_beta = {}#{(p, a): float(var.X) for (p, a), var in f_beta_var.items()}
     obj_val = float(m.ObjVal)
     return lambda_c, lambda_b, f_c, f_b, f_beta, obj_val
 
