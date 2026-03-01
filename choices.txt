@@ -60,3 +60,12 @@ Option 1 wold increase chromosone deimensonality and cause instability. Option 3
 --------
 
 #NOTE Use G_seg (undirected segment graph) for corridor expansion because it approximates “nearby streets” without directionality headaches
+------------
+
+choices re modelling the LP:
+Feature             Volumetric (Summation)                  Independent (Wiedmann)
+Accuracy            High for congestion and bottlenecks     High for topological detours
+Scale               Limited to small/medium areas           Scales to entire cities
+Complexity          Nonlinear/Bi-level (NP-Hard)            Linear (LP) / Rounding
+Solve Time          Days for small networks                 Minutes for small networks
+Key Limitation      Computationally prohibitive             Ignores road-width impact on speed

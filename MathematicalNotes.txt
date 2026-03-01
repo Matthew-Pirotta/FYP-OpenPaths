@@ -1,0 +1,8 @@
+So what is the advantage of this flow based modelling compared to all of the other Mathematical Approach? 
+
+⦁	Unlike facility-location or utility-based models that focus primarily on cyclist benefits, flow-based modelling treats urban space as a "zero-sum game". It explicitly calculates the system-wide travel time increase for cars caused by lane reallocations,  A scoring function evaluates road segments based on local attributes or static snapshots of demand, but it cannot account for how traffic globally reroutes across the entire city when a lane is removed 
+
+How does this flow thing actually work:
+-OD pairs are all in their own 'vacume', all flows are indepedent. Flows dont add up on a single edge. (This could be fixed with either travel time as a function of capacity, or make volumetric capacity constraint (where flows are additive))
+
+⦁	When you have a required flow (ϕ) of 1.0 for a specific Origin-Destination (OD) pair, the Flow Conservation Constraint.If the solver "turns the knob" and reduces the capacity (λce​) of your preferred street to 0.7, the Individual Capacity Constraint (fcs,t,e​≤λce​) forbids you from putting more than 0.7 of that specific trip on that street. To satisfy the "law" that 1.0 unit must reach the destination, the solver is forced to split the flow: 0.7 flow stays on the original (shortest) path. 0.3 flow is "redistributed" to the next-best alternative path. Yes, the fractional rerouting and the associated "length penalty" are calculated during the actual solve (the Linear Programming optimization) and are not merely a result of the rounding phase. 
