@@ -345,6 +345,8 @@ def _add_flow_block(
     bike_arcs: set[Arc],
     od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
     od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
+    cap_shared_bike_flow: bool = False,
+    shared_bike_cap_multiplier: float = 1e6,
 
 ) -> tuple[
     dict[tuple[int, Arc], gp.Var],  # f_c
@@ -356,12 +358,8 @@ def _add_flow_block(
     f_c_var: dict[tuple[int, Arc], gp.Var] = {}
     f_b_var: dict[tuple[int, Arc], gp.Var] = {}
     f_beta_var: dict[tuple[int, Arc], gp.Var] = {}
-    f_c_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
-    f_b_on_arc: dict[Arc, list[gp.Var]] = defaultdict(list)
     od_car_arcs_by_idx: dict[int, set[Arc]] = {}
     od_bike_arcs_by_idx: dict[int, set[Arc]] = {}
-
-    all_arcs_set = set(all_arcs)
 
     for p, od in enumerate(OD):
         s, t = od.origin, od.destination
@@ -418,14 +416,22 @@ def _add_flow_block(
             vbeta = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fbe_{p}_{u}_{v}_{k}")
             f_c_var[(p, a)] = vc
             f_beta_var[(p, a)] = vbeta
-            f_c_on_arc[a].append(vc)
+            if cap_shared_bike_flow:
+                # Optional shared-bike existence cap tied to available car space.
+                m.addConstr(
+                    vbeta <= float(shared_bike_cap_multiplier) * lambda_c_var[a],
+                    name=f"use_shared_{p}_{u}_{v}_{k}",
+                )
+            # Individual path-existence: OD p may use arc a only if car space exists on a.
+            m.addConstr(vc <= lambda_c_var[a], name=f"use_car_{p}_{u}_{v}_{k}")
 
         # dedicated bike vars on bike arcs
         for a in arcs_bike:
             u, v, k = a
             vb = m.addVar(lb=0.0, vtype=GRB.CONTINUOUS, name=f"fb_{p}_{u}_{v}_{k}")
             f_b_var[(p, a)] = vb
-            f_b_on_arc[a].append(vb)
+            # Individual path-existence: OD p may use arc a only if bike space exists on a.
+            m.addConstr(vb <= lambda_b_var[a], name=f"use_bike_{p}_{u}_{v}_{k}")
 
         # --- conservation ---
         # Cars: only over nodes touched by car corridor (+ s,t)
@@ -448,14 +454,6 @@ def _add_flow_block(
             in_sh   = gp.quicksum(f_beta_var[(p, a)] for a in in_c.get(i, []))
 
             m.addConstr((out_ded + out_sh) - (in_ded + in_sh) == rhs, name=f"bike_cons_{p}_{i}")
-
-    # --- capacity constraints (global) ---
-    for a in all_arcs:
-        u, v, k = a
-        if a in f_c_on_arc:
-            m.addConstr(gp.quicksum(f_c_on_arc[a]) <= lambda_c_var[a], name=f"cap_car_{u}_{v}_{k}")
-        if a in f_b_on_arc:
-            m.addConstr(gp.quicksum(f_b_on_arc[a]) <= lambda_b_var[a], name=f"cap_bike_{u}_{v}_{k}")
 
     m.update()
     return f_c_var, f_b_var, f_beta_var, od_car_arcs_by_idx, od_bike_arcs_by_idx
@@ -480,7 +478,7 @@ def solve_flow_lp(
     bike_dedicated_cost_attr: str = "bike_cost_dedicated",   # t_b
     # behavior toggles
     cap_shared_bike_flow: bool = False,          # typically False (Wiedemann leaves f_beta unconstrained)
-    shared_bike_cap_multiplier: float = 1e6,     # if cap_shared_bike_flow=True, cap is multiplier * Lambda (big)
+    shared_bike_cap_multiplier: float = 1e6,     # if cap_shared_bike_flow=True, cap is multiplier * lambda_c[a]
     # optional size control
     od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
     od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,    # solver options
@@ -518,9 +516,9 @@ def solve_flow_lp(
        Cars: standard conservation on f_c
        Bikes: conservation on (f_b + f_beta)
 
-    3) Capacity:
-         sum_p f_c[p,a] <= lambda_c[a]
-         sum_p f_b[p,a] <= lambda_b[a]
+    3) Individual path existence (non-additive across ODs):
+         f_c[p,a] <= lambda_c[a]    for each OD p and arc a
+         f_b[p,a] <= lambda_b[a]    for each OD p and arc a
        f_beta is unconstrained by default (cap_shared_bike_flow=False).
 
     Fixing
@@ -582,6 +580,8 @@ def solve_flow_lp(
         bike_arcs=bike_arcs,
         od_allowed_arcs_car=od_allowed_arcs_car,
         od_allowed_arcs_bike=od_allowed_arcs_bike,
+        cap_shared_bike_flow=cap_shared_bike_flow,
+        shared_bike_cap_multiplier=shared_bike_cap_multiplier,
     )
 
     if print_problem_stats:
