@@ -12,7 +12,8 @@ from gurobipy import GRB
 import copy
 import random
 from typing import Optional, Callable
-
+ 
+from constants import SafetyClass
 from Demand import paths_util, ODGeneration
 import graph_util
 
@@ -728,6 +729,99 @@ def _apply_segment_fixings(
     return fixed_this_round
 
 
+def _build_current_network_baseline_fixings(
+    G: MultiDiGraph,
+    eligible_bike_arcs: set[Arc],
+    fixed_bike_1_seed: set[Arc],
+    fixed_bike_0_seed: set[Arc],
+) -> tuple[set[Arc], set[Arc]]:
+    """
+    Build fixings that represent the current as-built network:
+    - arcs with existing bike infra are fixed to 1
+    - all other eligible decision arcs are fixed to 0
+    """
+    baseline_fixed_bike_1: set[Arc] = set(fixed_bike_1_seed)
+    baseline_fixed_bike_0: set[Arc] = set(fixed_bike_0_seed)
+
+
+    for a in eligible_bike_arcs:
+        if a in baseline_fixed_bike_1 or a in baseline_fixed_bike_0:
+            continue
+
+        u, v, k = a
+        d = G[u][v][k]
+        safety = (d.get("safety"))
+        if safety == SafetyClass.SAFE:
+            baseline_fixed_bike_1.add(a)
+        else:
+            baseline_fixed_bike_0.add(a)
+
+    baseline_fixed_bike_0 -= baseline_fixed_bike_1
+    return baseline_fixed_bike_1, baseline_fixed_bike_0
+
+
+def baseline_objective_value(
+    G,
+    OD: OD,
+    seg_to_arcs: dict[Seg, list[Arc]],
+    Lambda_seg: dict[Seg, float],
+    eligible_bike_arcs: set[Arc],
+    car_arcs,
+    bike_arcs,
+    *,
+    gamma: float,
+    fixed_bike_1_init: Optional[set[Arc]] = None,  #arcs fixed to have a bike lane
+    fixed_bike_0_init: Optional[set[Arc]] = None,  #arcs fixed to have no bike lane (optional)
+    alpha_bike_space: float = 0.5,
+    od_allowed_arcs_car: Optional[dict[paths_util.ODKey, set[Arc]]] = None,
+    od_allowed_arcs_bike: Optional[dict[paths_util.ODKey, set[Arc]]] = None,    # solver options    
+    car_cost_attr: str = "car_cost_current",
+    bike_shared_cost_attr: str = "bike_cost_shared",
+    bike_dedicated_cost_attr: str = "bike_cost_dedicated",
+    verbose: bool = True,
+    print_problem_stats: bool = False,
+):
+    initial_fixed_bike_1: set[Arc] = set(fixed_bike_1_init or set())
+    initial_fixed_bike_0: set[Arc] = set(fixed_bike_0_init or set())
+
+    baseline_fixed_bike_1, baseline_fixed_bike_0 = _build_current_network_baseline_fixings(
+        G=G,
+        eligible_bike_arcs=eligible_bike_arcs,
+        fixed_bike_1_seed=initial_fixed_bike_1,
+        fixed_bike_0_seed=initial_fixed_bike_0,
+    )
+
+    _, _, _, _, _, baseline_obj = solve_flow_lp(
+        G=G,
+        OD=OD,
+        seg_to_arcs=seg_to_arcs,
+        Lambda_seg=Lambda_seg,
+        eligible_bike_arcs=eligible_bike_arcs,
+        fixed_bike_1=baseline_fixed_bike_1,
+        fixed_bike_0=baseline_fixed_bike_0,
+        gamma=gamma,
+        car_arcs=car_arcs,
+        bike_arcs=bike_arcs,
+        alpha_bike_space=alpha_bike_space,
+        od_allowed_arcs_bike=od_allowed_arcs_bike,
+        od_allowed_arcs_car=od_allowed_arcs_car,
+        car_cost_attr=car_cost_attr,
+        bike_shared_cost_attr=bike_shared_cost_attr,
+        bike_dedicated_cost_attr=bike_dedicated_cost_attr,
+        verbose=False,
+        print_problem_stats=print_problem_stats,
+    )
+
+    if verbose:
+        print(
+            f"[baseline] obj={baseline_obj:.4g} "
+            f"fixed_1={len(baseline_fixed_bike_1)} "
+            f"fixed_0={len(baseline_fixed_bike_0)}"
+        )
+
+    return baseline_obj
+
+
 def round_lp_solution_segment_aware(
     G,
     OD: OD,
@@ -751,6 +845,7 @@ def round_lp_solution_segment_aware(
     bike_shared_cost_attr: str = "bike_cost_shared",
     bike_dedicated_cost_attr: str = "bike_cost_dedicated",
     min_lambda_to_consider: float = 1e-6,
+    max_relative_deterioration: Optional[float] = 0.0,
     verbose: bool = True,
     print_problem_stats: bool = False,
 ):
@@ -761,6 +856,26 @@ def round_lp_solution_segment_aware(
 
     history = []
     rounds = 0
+   
+    baseline_obj = baseline_objective_value(            
+            G=G,
+            OD=OD,
+            seg_to_arcs=seg_to_arcs,
+            Lambda_seg=Lambda_seg,
+            eligible_bike_arcs=eligible_bike_arcs,
+            car_arcs = car_arcs,
+            bike_arcs=bike_arcs,
+            gamma=gamma,
+            fixed_bike_1_init=fixed_bike_1,
+            fixed_bike_0_init=fixed_bike_0,
+            alpha_bike_space=alpha_bike_space,
+            od_allowed_arcs_bike=od_allowed_arcs_bike,
+            od_allowed_arcs_car=od_allowed_arcs_car,
+            car_cost_attr=car_cost_attr,
+            bike_shared_cost_attr=bike_shared_cost_attr,
+            bike_dedicated_cost_attr=bike_dedicated_cost_attr,
+            verbose=False,
+            print_problem_stats=print_problem_stats,)
 
     while len(fixed_bike_1) < budget_bike_lanes:
         rounds += 1
@@ -785,6 +900,22 @@ def round_lp_solution_segment_aware(
             verbose=False,
             print_problem_stats=print_problem_stats,
         )
+        
+
+        rel_deterioration = 0.0
+        denom = abs(baseline_obj)
+        if denom > 1e-12:
+            rel_deterioration = (obj - baseline_obj) / denom
+        else:
+            rel_deterioration = float("inf") if obj > baseline_obj + 1e-12 else 0.0
+
+        if max_relative_deterioration is not None and rel_deterioration > max_relative_deterioration:
+            if verbose:
+                print(
+                    f"[round {rounds}] Relative deterioration {rel_deterioration:.4%} "
+                    f"exceeded limit {max_relative_deterioration:.4%} vs baseline obj {baseline_obj:.4g}. Stopping."
+                )
+            break
 
         arc_score, seg_score = _score_segments_for_rounding(
             G=G,
@@ -825,14 +956,20 @@ def round_lp_solution_segment_aware(
         history.append({
             "round": rounds,
             "obj": obj,
+            "baseline_obj": baseline_obj,
+            "relative_deterioration": rel_deterioration,
             "fixed_total": len(fixed_bike_1),
             "fixed_this_round": fixed_this_round,
             "top_seg_score": seg_score[0][0],
         })
 
         if verbose:
-            print(f"[round {rounds}] obj={obj:.4g} fixed={len(fixed_bike_1)}/{budget_bike_lanes} "
-                  f"(+{fixed_this_round}) top_seg_score={seg_score[0][0]:.4g}")
+            print(
+                f"[round {rounds}] obj={obj:.4g} "
+                f"(rel_det={rel_deterioration:.4%} vs baseline) "
+                f"fixed={len(fixed_bike_1)}/{budget_bike_lanes} "
+                f"(+{fixed_this_round}) top_seg_score={seg_score[0][0]:.4g}"
+            )
 
     newly_fixed_bike_1 = fixed_bike_1 - initial_fixed_bike_1
     newly_fixed_bike_0 = fixed_bike_0 - initial_fixed_bike_0

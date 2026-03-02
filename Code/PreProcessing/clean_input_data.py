@@ -157,6 +157,7 @@ def standardise_edge_atr(G):
             car_lanes = clean_lanes(car_lanes)
         d["car_lanes"] = car_lanes
 
+        #TODO idk if this is correct
         bike_lanes = 1
         if d.get("bike_allowed", False):
             bike_lanes = d.get("lanes", 1)
