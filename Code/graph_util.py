@@ -52,7 +52,6 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
 
 #region reallocation
 def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
-    return True
     """Updates the reallocatable attribute in place"""
     # Work on a shallow copy (just edge structure)
     u,v,k = edge_id
