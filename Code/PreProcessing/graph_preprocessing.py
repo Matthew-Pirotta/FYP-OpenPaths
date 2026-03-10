@@ -97,7 +97,7 @@ def clean_graph(G:MultiDiGraph, place_name):
     G = ox.project_graph(G) 
 
 
-    G = ox.distance.add_edge_lengths(G)
+    #G = ox.distance.add_edge_lengths(G) # This is reprojecting the lenghts after already projecting
     G = clean_input_data.add_grades(G)
 
     enrich_attributes.bike_safety_classification(G)
