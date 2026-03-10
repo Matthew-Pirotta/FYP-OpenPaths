@@ -94,6 +94,13 @@ def collapse_lanes_list(G):
 #endregion
 
 
+def remove_self_loops(G:MultiDiGraph):
+    """Self loops need to be removed as they have a lenght of 0, and are not meaningful NOTE (roundabouts are currently represted by multiple nodes)"""
+    loops = list(nx.selfloop_edges(G))
+    print(f"removed {len(loops)} self loops")
+    G.remove_edges_from(loops)
+
+
 def add_max_speed(G):
     """
     Add the following attributes the edges,
@@ -188,24 +195,24 @@ def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGr
     )
 
     G = ox.add_node_elevations_google(G, batch_size=batch_size, pause=pause)
-    G = ox.elevation.add_edge_grades(G, add_absolute=True)
 
     return G
 
 def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
     """Nodes with missing elevation take the median of their neighbours. This is repeated multiple times in the case where elevationless nodes are completely surrounded with nodes that are also missing elevation data"""
     print("Imputing missing elevation values")
+    UG = G.to_undirected(as_view=True)
     for it in range(max_iter):
         changed = 0
         for node, data in G.nodes(data=True):
             elev = data.get("elevation")
-            if np.isnan(elev) or elev is None:
-                neigh_elevs = [
-                    G.nodes[n].get("elevation")
-                    for n in G.neighbors(node)
-                    if G.nodes[n].get("elevation") is not None #.get() returns None if node doesnt have elevation 
-                    and not np.isnan(G.nodes[n]["elevation"])
-                ]
+            if elev is None or np.isnan(elev):
+
+                neigh_elevs = []
+                for n in UG.neighbors(node):
+                    e = G.nodes[n].get("elevation")
+                    if e is not None and not np.isnan(e):
+                        neigh_elevs.append(e)
 
                 if neigh_elevs:
                     data["elevation"] = np.median(neigh_elevs)
@@ -214,9 +221,9 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         print(f"Iteration {it+1}: imputed {changed} nodes")
         if changed == 0:
             break
-  
+      
     #TODO idk why man :Sob:
-    """    
+    """         
     print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
     full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
                       if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]
@@ -228,8 +235,14 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
                 data["elevation"] = float(median_elevation)
 
     print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))"""
+    
+    return G
 
-    #Recalculate grades and clamp to reasonable values
+
+def add_grades(G:MultiDiGraph):
+    """
+    Calculate grades and clamp to reasonable values
+    """
     G = ox.elevation.add_edge_grades(G, add_absolute=True)
 
     for _,_, data in G.edges(data=True):
@@ -260,7 +273,7 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
             attrs["car_lanes"] = 0
             
             attrs["geometry"] = d["geometry"].reverse()
-            attrs["grade"] = -d["grade"]
+            #attrs["grade"] = -d["grade"]
             
             # Set specific bike-safety attributes
             attrs["risk_factor"] = d.get("risk_factor")

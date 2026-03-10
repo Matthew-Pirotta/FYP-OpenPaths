@@ -6,6 +6,7 @@ import numpy as np
 from . import clean_input_data, enrich_attributes, graph_structure
 from NetworkOptimisation import impedance_calculator
 import graph_util
+import constants
 
 def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
@@ -45,33 +46,66 @@ def load_network(location) -> MultiDiGraph:
         return G_master
 
 
+def audit_elevation_and_grade(G, label=""):
+    import numpy as np
+    from collections import Counter
+
+    missing_nodes = [
+        n for n, d in G.nodes(data=True)
+        if d.get("elevation") is None or (isinstance(d.get("elevation"), (int, float)) and np.isnan(d.get("elevation")))
+    ]
+
+    bad_edges = []
+    for u, v, k, d in G.edges(keys=True, data=True):
+        if d.get("grade") is None or (isinstance(d.get("grade"), (int, float)) and np.isnan(d.get("grade"))):
+            bad_edges.append((u, v, k, G.nodes[u].get("elevation"), G.nodes[v].get("elevation"), d.get("length")))
+
+    grade_counts = Counter()
+    for _, _, _, d in G.edges(keys=True, data=True):
+        g = d.get("grade")
+        if not isinstance(g, (int, float)):
+            grade_counts[g] += 1
+
+    print(f"\n--- AUDIT: {label} ---")
+    print("nodes:", G.number_of_nodes(), "edges:", G.number_of_edges())
+    print("missing elevation nodes:", len(missing_nodes))
+    print("grade None/NaN edges:", len(bad_edges))
+    print("non-numeric grade counts:", grade_counts.most_common(5))
+    if bad_edges:
+        print("sample bad edges:", bad_edges[:10])
 
 
 def clean_graph(G:MultiDiGraph, place_name):
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
 
     # --------------------
-    clean_input_data.add_elevation_data(G)
-    clean_input_data.impute_missing_elevation(G)
+    clean_input_data.remove_self_loops(G)
+    G = clean_input_data.add_elevation_data(G)
+    G = clean_input_data.impute_missing_elevation(G)
+
     clean_input_data.merge_semantically_equivalent_road_tags(G)
     clean_input_data.collapse_road_tag_lists(G)
     G = clean_input_data.add_max_speed(G)
     clean_input_data.standardise_edge_atr(G)
     clean_input_data.ensure_edge_geometries(G)
     clean_input_data.ensure_bidirectional_bike(G)
+
     # simplify topology (may change geometries), then recompute accurate lengths
     graph_structure.simplify_multidigraph_in_place(G)
     
     # ensures accurate 'length' in meters
-    G = ox.project_graph(G)    
+    G = ox.project_graph(G) 
+
+
     G = ox.distance.add_edge_lengths(G)
+    G = clean_input_data.add_grades(G)
 
     enrich_attributes.bike_safety_classification(G)
     impedance_calculator.update_bike_costs(G)
     impedance_calculator.update_car_costs(G)
     enrich_attributes.tag_reallocatable_edges(G, verbose=True)
-    gdf_regions_proj, gdf_local_proj = enrich_attributes.load_and_clean_localities(G, place_name)
+    gdf_regions_proj, gdf_local_proj = enrich_attributes.load_and_clean_localities(G, place_name, constants.LOCALITY_TO_REGION)
     #NOTE imp to project before assigning regions due to using x and y co-ordinates
-    G = enrich_attributes.assign_edge_regions(G, gdf_regions_proj, gdf_local_proj)
+    G = enrich_attributes.assign_spatial_context(G, gdf_regions_proj, gdf_local_proj)
 
     return G, gdf_regions_proj, gdf_local_proj

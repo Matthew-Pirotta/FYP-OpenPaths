@@ -4,9 +4,11 @@ from networkx import MultiDiGraph
 import osmnx as ox
 import networkx as nx
 import numpy as np
+import geopandas as gpd
 from constants import SafetyClass, InfraType, FIETSSTRAAT_SPEED_KMH
 
 from collections import Counter
+from shapely.geometry import Point
 
 
 safety_to_risk_factor_map = {
@@ -86,36 +88,56 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
 
 
 #TODO move to clean_input data?
-def load_and_clean_localities(G, place_name) -> tuple[GeoDataFrame, GeoDataFrame]:
+def load_and_clean_localities(G, place_name, locality_to_region) -> tuple[GeoDataFrame, GeoDataFrame]:
     """
-    Fetch and clean administrative boundaries for both level 7 (regions) and level 8 (localities) in Malta. Returns a unified GeoDataFrame projected to the graph CRS.
+    Fetch Malta localities (admin_level=8), clean them, then construct
+    region geometries by dissolving localities according to a manual
+    locality -> region mapping.
+
+    Returns
+    -------
+    gdf_regions_proj
+        Region polygons created from dissolving localities.
+    gdf_local_proj
+        Cleaned locality polygons.
     """
-    gdf_localities = ox.features.features_from_place(
+
+    gdf_local = ox.features.features_from_place(
         place_name,
-        tags={"boundary": "administrative", "admin_level": ["7", "8"]}
+        tags={"boundary": "administrative", "admin_level": "8"}
     )
 
-    #Data cleaning
-    gdf_localities = gdf_localities[["name", "admin_level","geometry"]]
-    gdf_localities = gdf_localities[gdf_localities["admin_level"].isin(["7", "8"])]
-    gdf_localities = gdf_localities.dropna()
-    gdf_localities = gdf_localities.drop_duplicates(subset=['name'])
+    # Basic cleaning-
+    gdf_local = gdf_local[["name", "admin_level","geometry"]]
+    gdf_local = gdf_local[gdf_local["admin_level"].isin(["8"])]
+    gdf_local = gdf_local[["name", "geometry"]].dropna()
+    gdf_local = gdf_local.drop_duplicates(subset=["name"])
 
-    # Merge multipolygons
-    for idx, row in gdf_localities.iterrows():
+    # Keep largest polygon if multipolygon
+    for idx, row in gdf_local.iterrows():
         if row.geometry.geom_type == "MultiPolygon":
-            largest_poly  = max(row.geometry.geoms, key=lambda g: g.area)  # keep largest component
-            gdf_localities.at[idx, "geometry"] = largest_poly 
+            largest_poly = max(row.geometry.geoms, key=lambda g: g.area)
+            gdf_local.at[idx, "geometry"] = largest_poly
 
-    gdf_localities_proj = gdf_localities.to_crs(G.graph["crs"])
+    # Add region from manual mapping
+    gdf_local["region"] = gdf_local["name"].map(locality_to_region)
 
-    gdf_regions_proj  = gdf_localities_proj[gdf_localities["admin_level"] == "7"]
-    gdf_local_proj = gdf_localities_proj[gdf_localities["admin_level"] == "8"]
+    missing = gdf_local[gdf_local["region"].isna()]
+    if len(missing) > 0:
+        print("Warning: localities missing region mapping:")
+        print(missing["name"].tolist())
 
-    # Inspect results
-    print("Number of localities:", len(gdf_localities))
+    # Project to graph CRS
+    gdf_local_proj = gdf_local.to_crs(G.graph["crs"])
+
+    # Build regions by dissolving localities
+    gdf_regions_proj = (gdf_local_proj.dissolve(by="region", as_index=False)[["region", "geometry"]]
+                        .rename(columns={"region": "name"}))
+
+    print("Localities:", len(gdf_local_proj))
+    print("Regions:", len(gdf_regions_proj))
+
     return gdf_regions_proj, gdf_local_proj
-
 
 
 """def tag_reallocatable_edges(G:MultiDiGraph):
@@ -184,59 +206,203 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
 
     return counters
 
-
-
-
-def assign_edge_regions( G: MultiDiGraph, gdf_regions_proj, gdf_local_proj,) -> MultiDiGraph:
+def _lookup_intersections(geom, gdf, sindex, name_col="name"):
     """
-    Assign each edge:
-      - all intersecting regions (admin_level=7)
-      - all intersecting localities/towns (admin_level=8)
-
-    Attributes added:
-      - d["regions"]    : list[str]
-      - d["localities"] : list[str]
+    Return all polygon names whose geometry intersects the given geometry.
     """
+    matches = []
+    for idx in sindex.intersection(geom.bounds):
+        row = gdf.iloc[idx]
+        if geom.intersects(row.geometry):
+            matches.append(row[name_col])
+    return sorted(set(matches))
 
+
+def _nearest_name(geom, gdf, name_col="name"):
+    """
+    Return the name of the nearest polygon to the geometry centroid.
+    """
+    centroid = geom.centroid
+    nearest_idx = gdf.geometry.distance(centroid).idxmin()
+    return gdf.loc[nearest_idx, name_col]
+
+
+def _resolve_context_col(gdf, attr, fallback_cols):
+    """
+    Pick a GeoDataFrame column for spatial-name lookups.
+    Preference: `attr` if present, otherwise first available fallback.
+    """
+    if attr in gdf.columns:
+        return attr
+
+    for col in fallback_cols:
+        if col in gdf.columns:
+            return col
+
+    raise KeyError(f"No matching column found for '{attr}'. Tried fallbacks: {fallback_cols}")
+
+
+def _assign_geometry_context(
+    geom,
+    gdf_regions_proj,
+    gdf_local_proj,
+    sindex_regions,
+    sindex_local,
+    *,
+    allow_multiple=True,
+    region_attr="regions",
+    locality_attr="localities",
+):
+    """
+    Assign region/locality names to a geometry.
+
+    Parameters
+    ----------
+    geom
+        Shapely geometry (Point or LineString).
+    allow_multiple : bool
+        If True, returns all intersecting names as lists.
+        If False, returns a single name for each via first match / nearest fallback.
+
+    Returns
+    -------
+    dict
+        {
+            region_attr: list[str] or str,
+            locality_attr: list[str] or str
+        }
+    """
+    if geom is None or geom.is_empty:
+        return {
+            region_attr: [] if allow_multiple else None,
+            locality_attr: [] if allow_multiple else None,
+        }
+
+    region_col = _resolve_context_col(gdf_regions_proj, region_attr, ("name",))
+    locality_col = _resolve_context_col(gdf_local_proj, locality_attr, ("locality", "name"))
+
+    # ---- Regions ----
+    regions = _lookup_intersections(geom, gdf_regions_proj, sindex_regions, region_col)
+    if not regions:
+        nearest_region = _nearest_name(geom, gdf_regions_proj, region_col)
+        regions = [nearest_region]
+
+    # ---- Localities ----
+    localities = _lookup_intersections(geom, gdf_local_proj, sindex_local, locality_col)
+    if not localities:
+        nearest_locality = _nearest_name(geom, gdf_local_proj, locality_col)
+        localities = [nearest_locality]
+
+    if allow_multiple:
+        return {
+            region_attr: regions,
+            locality_attr: localities,
+        }
+    else:
+        return {
+            region_attr: regions[0] if regions else None,
+            locality_attr: localities[0] if localities else None,
+        }
+
+
+def assign_node_regions(
+    G: MultiDiGraph,
+    gdf_regions_proj: gpd.GeoDataFrame,
+    gdf_local_proj: gpd.GeoDataFrame,
+    *,
+    region_attr="region",
+    locality_attr="locality",
+) -> MultiDiGraph:
+    """
+    Assign each node a single region and locality.
+
+    Attributes added to each node:
+      - node[region_attr]   : str
+      - node[locality_attr] : str
+    """
     sindex_regions = gdf_regions_proj.sindex
-    sindex_local   = gdf_local_proj.sindex
+    sindex_local = gdf_local_proj.sindex
+
+    for node, data in G.nodes(data=True):
+        x = data.get("x")
+        y = data.get("y")
+
+        if x is None or y is None:
+            data[region_attr] = None
+            data[locality_attr] = None
+            continue
+
+        geom = Point(x, y)
+        context = _assign_geometry_context(
+            geom,
+            gdf_regions_proj,
+            gdf_local_proj,
+            sindex_regions,
+            sindex_local,
+            allow_multiple=False,
+            region_attr=region_attr,
+            locality_attr=locality_attr,
+        )
+
+        data[region_attr] = context[region_attr]
+        data[locality_attr] = context[locality_attr]
+
+    return G
+
+
+def assign_edge_regions(
+    G: MultiDiGraph,
+    gdf_regions_proj: gpd.GeoDataFrame,
+    gdf_local_proj: gpd.GeoDataFrame,
+    *,
+    region_attr="regions",
+    locality_attr="localities",
+) -> MultiDiGraph:
+    """
+    Assign each edge all intersecting regions and localities.
+
+    Attributes added to each edge:
+      - d[region_attr]   : list[str]
+      - d[locality_attr] : list[str]
+    """
+    sindex_regions = gdf_regions_proj.sindex
+    sindex_local = gdf_local_proj.sindex
 
     for u, v, k, d in G.edges(keys=True, data=True):
         geom = d.get("geometry")
-        if geom is None or geom.is_empty:
-            d["regions"] = []
-            d["localities"] = []
-            continue
 
-        # ---- Regions (admin_level=7) ----
-        regions = []
-        for idx in sindex_regions.intersection(geom.bounds):
-            row = gdf_regions_proj.iloc[idx]
-            if geom.intersects(row.geometry):
-                regions.append(row["name"])
+        context = _assign_geometry_context(
+            geom,
+            gdf_regions_proj,
+            gdf_local_proj,
+            sindex_regions,
+            sindex_local,
+            allow_multiple=True,
+            region_attr=region_attr,
+            locality_attr=locality_attr,
+        )
 
-        # Fallback: nearest region if none intersect
-        if not regions:
-            centroid = geom.centroid
-            nearest_idx = gdf_regions_proj.geometry.distance(centroid).idxmin()
-            regions = [gdf_regions_proj.loc[nearest_idx, "name"]]
+        d[region_attr] = context[region_attr]
+        d[locality_attr] = context[locality_attr]
+
+    return G
 
 
-        # ---- Localities (admin_level=8) ----
-        localities = []
-        for idx in sindex_local.intersection(geom.bounds):
-            row = gdf_local_proj.iloc[idx]
-            if geom.intersects(row.geometry):
-                localities.append(row["name"])
+def assign_spatial_context(G: MultiDiGraph, gdf_regions_proj: gpd.GeoDataFrame, gdf_local_proj: gpd.GeoDataFrame,) -> MultiDiGraph:
+    """
+    Assign spatial administrative context to both nodes and edges.
 
-        # Fallback: nearest locality if none intersect
-        if not localities:
-            centroid = geom.centroid
-            nearest_idx = gdf_local_proj.geometry.distance(centroid).idxmin()
-            localities = [gdf_local_proj.loc[nearest_idx, "name"]]
+    Node attributes:
+      - region
+      - locality
 
-        # Assign attributes
-        d["regions"] = sorted(set(regions))
-        d["localities"] = sorted(set(localities))
+    Edge attributes:
+      - regions
+      - localities
+    """
+    #print("GDF region",gdf_regions_proj.head())
+    #print("gdf local", gdf_local_proj.head())
 
+    G = assign_node_regions(G, gdf_regions_proj, gdf_local_proj)
+    G = assign_edge_regions(G, gdf_regions_proj, gdf_local_proj)
     return G

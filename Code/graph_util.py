@@ -9,6 +9,7 @@ import constants
 from constants import SafetyClass
 from PreProcessing import enrich_attributes
 from typing import Literal
+from NetworkOptimisation import impedance_calculator
 
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
@@ -92,7 +93,7 @@ def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]
 
     #5.speed_kph
     d["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
-    d["car_cost_current"] = d["car_cost_if_fietsstraat"]
+    #d["car_cost_current"] = d["car_cost_if_fietsstraat"]
 
     # 6. After conversion, edge should not be converted again
     d["reallocatable"] = False
@@ -110,13 +111,13 @@ def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]
         d_rev["infra_type"] = "fietsstraat"
         d_rev["safety"] = SafetyClass.SAFE
         d_rev["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
-        d_rev["car_cost_current"] = d["car_cost_if_fietsstraat"]
+        #d_rev["car_cost_current"] = d["car_cost_if_fietsstraat"]
         d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
         d_rev["reallocatable"] = False
         reallocated.append((v, u, rev_key))
 
     #TODO
-    enrich_attributes.update_bike_costs(G, reallocated)
+    impedance_calculator.update_bike_costs(G, reallocated)
 
     
     return reallocated
@@ -191,37 +192,31 @@ def reallocate_edge_dedicated(
 
 #endregion
 
-def summarise_road_type_stats(G:MultiDiGraph):
-    highway_counts = Counter()
-    bikeway_counts = Counter()
-    cycleway_counts = Counter()
-    tunnel_counts = Counter()
-
-
-    for u, v, data in G.edges(data=True):
-        highway_counts[data.get("highway")] += 1
-        bikeway_counts[data.get("bicycle")] += 1
-        cycleway_counts[data.get("cycleway")] += 1
-        tunnel_counts[data.get("tunnel")] += 1
+def summarise_road_type_stats(G):
+    # Map the edge attribute key to the label you want to print
+    categories = {
+        "highway": "Highway type counts",
+        "bicycle": "Bikeway classification type counts",
+        "cycleway": "Cycleway type counts",
+        "tunnel": "Tunnel counts",
+        "junction": "Juntion type counts",
+        "turns": "turn type counts",
+    }
     
-    print("Highway type counts:")
-    for highway_type, count in highway_counts.most_common():
-        print(f"{highway_type}: {count}")
+    # Initialize counters for each category
+    stats = {key: Counter() for key in categories}
 
-    print("-------")
-    print("bikeway classification type counts:")
-    for bikeway_type, count in bikeway_counts.most_common():
-        print(f"{bikeway_type}: {count}")
-
-    print("------")
-    print("cycleway type counts:")
-    for cycleway_type, count in cycleway_counts.most_common():
-        print(f"{cycleway_type}: {count}")
+    # Single pass over the edges
+    for _, _, data in G.edges(data=True):
+        for key in categories:
+            stats[key][data.get(key)] += 1
     
-    print("------")
-    print("tunnel counts:")
-    for tunnel_type, count in tunnel_counts.most_common():
-        print(f"{tunnel_type}: {count}")
+    # Print the results
+    for key, label in categories.items():
+        print(f"{label}:")
+        for val, count in stats[key].most_common():
+            print(f"{val}: {count}")
+        print("-" * 10)
 
 
 def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) -> MultiDiGraph:

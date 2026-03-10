@@ -5,11 +5,15 @@ import random
 import pandas as pd
 import osmnx as ox
 from collections import Counter
+from collections.abc import Mapping
 from constants import OD, ODPair
-from typing import Optional
+from typing import Any, Optional
+import networkx as nx
+import constants
 
 
-DEFAULT_BETA = 0.001
+
+DEFAULT_BETA = 0.0002
 
 #region sampling Origin
 def sample_point_in_polygon(polygon, rng, max_tries=100):
@@ -164,6 +168,80 @@ def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng
     # Sample
     idx = rng.choice(len(destinations), p=probs)
     return destinations.iloc[idx].geometry
+
+
+#region TAZ mapping and region-level OD counters
+def build_region_od_table(G: nx.MultiDiGraph,od_counts,*,micro_attr: str = "locality",locality_to_region: dict[str, str] | None = None,) -> pd.DataFrame:
+    """
+    Build an OD matrix table aggregated by region or locality.
+
+    Parameters
+    ----------
+    G
+        Graph whose nodes contain locality attributes.
+    od_counts
+        Either:
+          - dict {(origin_node, destination_node): weight}
+          - list [(origin_node, destination_node, weight)]
+    micro_attr
+        Node attribute storing locality.
+    locality_to_region
+        Optional mapping {locality -> region}.
+        If provided, aggregation happens at region level.
+
+    Returns
+    -------
+    DataFrame
+        OD matrix where rows = origin region/locality
+        and columns = destination region/locality
+    """
+    flows = {}
+
+    if isinstance(od_counts, Mapping):
+        iterator = ((o, d, w) for (o, d), w in od_counts.items())
+    else:
+        iterator = od_counts
+
+    for o, d, w in iterator:
+
+        o_local = G.nodes[int(o)].get(micro_attr)
+        d_local = G.nodes[int(d)].get(micro_attr)
+
+        if o_local is None or d_local is None:
+            continue
+
+        if locality_to_region is not None:
+            o_region = locality_to_region.get(o_local)
+            d_region = locality_to_region.get(d_local)
+        else:
+            o_region = o_local
+            d_region = d_local
+
+        if o_region is None or d_region is None:
+            continue
+
+        key = (o_region, d_region)
+
+        flows[key] = flows.get(key, 0.0) + float(w)
+
+    df = pd.DataFrame(
+        [(o, d, w) for (o, d), w in flows.items()],
+        columns=["origin", "destination", "flow"],
+    )
+
+    od_table = df.pivot_table(
+        index="origin",
+        columns="destination",
+        values="flow",
+        aggfunc="sum",
+        fill_value=0,
+    )
+
+    od_table = od_table.reindex(index = constants.REGION_ORDER, columns=constants.REGION_ORDER)
+
+
+    return od_table
+#endregion
 
 #region gen_OD
 def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=3000,):

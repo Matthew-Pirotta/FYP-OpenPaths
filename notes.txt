@@ -146,3 +146,9 @@ https://en-gb.topographic-map.com/map-2rs8/Malta/?center=35.90362%2C14.50312&zoo
 
 National Household Travel Survey
 https://nso.gov.mt/wp-content/uploads/National-Household-Travel-Survey-Publication.pdf
+
+SUMO
+https://www.youtube.com/watch?v=wZycufsTEGU
+https://sumo.dlr.de/docs/Definition_of_Vehicles%2C_Vehicle_Types%2C_and_Routes.html
+https://sumo.dlr.de/docs/Tools/Trip.html
+https://sumo.dlr.de/docs/Simulation/Output/Summary.html

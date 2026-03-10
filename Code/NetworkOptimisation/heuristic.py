@@ -99,37 +99,63 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
     }
 
 
-def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None) -> dict:
-    # Handle empty graph case
-    if G_protected.number_of_nodes() == 0 or G_protected.number_of_edges() == 0:
-        return {
-            # calc_connectedness
-            "num_components": 0,
-            "lcc_length": 0.0,
+def _evaluate_network_metrics(
+    G_target: MultiDiGraph,
+    G_drive_reference: MultiDiGraph,
+    *,
+    k_sample=None,
+    prefix: str = "",
+    include_union_geom: bool = True,
+) -> dict:
+    """Evaluate graph-level metrics and prefix result keys when requested."""
+    metric_names = [
+        "num_components",
+        "lcc_length",
+        "mean_edge_betweenness",
+        "mean_node_betweenness",
+        "mean_node_closeness",
+        "mean_degree",
+        "mean_directness",
+        "coverage_area_m2",
+        "coverage_area_km2",
+    ]
 
-            # calc_centrality
-            "mean_edge_betweenness": 0.0,
-            "mean_node_betweenness": 0.0,
-            "mean_node_closeness": 0.0,
-            "mean_degree": 0.0,
+    if G_target.number_of_nodes() == 0 or G_target.number_of_edges() == 0:
+        results = {f"{prefix}{name}": 0.0 for name in metric_names}
+        results[f"{prefix}num_components"] = 0
+        if include_union_geom:
+            results[f"{prefix}union_geom"] = None
+        return results
 
-            # calc_directness
-            "mean_directness": 0.0,
+    G_lcc = largest_by_length(G_target)
+    connectedness = calc_connectedness(G_target, G_lcc)
+    centrality = calc_centrality(G_lcc, k_sample=k_sample)
+    directness = calc_directness(G_target, G_drive_reference, k_sample=k_sample)
+    coverage = calc_coverage(G_target)
 
-            #Coverage
-            "coverage_area_m2": 0.0,
-            "coverage_area_km2": 0.0,
-            "union_geom": None, 
-        }
-
-    Gp_lcc = largest_by_length(G_protected)
-
-    connectedness = calc_connectedness(G_protected, Gp_lcc)
-    centrality  = calc_centrality(Gp_lcc, k_sample=k_sample)
-    directness = calc_directness(G_protected, G_drive, k_sample=k_sample)
-    coverage = calc_coverage(G_protected)
     results = {**connectedness, **centrality, **directness, **coverage}
-    return results
+    if not include_union_geom:
+        results.pop("union_geom", None)
+
+    return {f"{prefix}{k}": v for k, v in results.items()}
+
+
+def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None) -> dict:
+    bike_results = _evaluate_network_metrics(
+        G_protected,
+        G_drive,
+        k_sample=k_sample,
+        prefix="",
+        include_union_geom=True,
+    )
+    car_results = _evaluate_network_metrics(
+        G_drive,
+        G_drive,
+        k_sample=k_sample,
+        prefix="car_",
+        include_union_geom=False,
+    )
+    return {**bike_results, **car_results}
 
 def heuristic_edge_betweenness_centrality(
         G_master:MultiDiGraph,
