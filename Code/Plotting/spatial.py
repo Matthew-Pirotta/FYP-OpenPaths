@@ -13,9 +13,6 @@ def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
     """Plot the location and the region outlines, and the transport network if passed"""
     fig, ax = plt.subplots(figsize=(10, 10))
 
-    if G is not None:
-        gdf = gdf.to_crs(G.graph["crs"])
-
     gdf_colored = assign_adjacent_colors(gdf)
     gdf_colored.plot(ax=ax, color=gdf_colored["color"], edgecolor="black", alpha=0.7)
 
