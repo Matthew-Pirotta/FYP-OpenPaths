@@ -32,26 +32,19 @@ def sample_point_in_polygon(polygon, rng, max_tries=100):
 
     raise RuntimeError("Failed to sample point inside polygon")
 
-def sample_point_from_regions_weighted(gdf_regions, rng):
-    """
-    Sample a random point from regions, weighted by polygon area.
-    """
+def prepare_region_sampling(gdf_regions):
+    """Weighted by area"""
     valid = gdf_regions[
-        gdf_regions.geometry.notnull() & 
+        gdf_regions.geometry.notnull() &
         ~gdf_regions.geometry.is_empty
-    ].copy()
+    ]
 
-    valid["area"] = valid.geometry.area
-    probs = valid["area"] / valid["area"].sum()
+    geoms = list(valid.geometry)
+    areas = np.array([geom.area for geom in geoms], dtype=float)
+    probs = areas / areas.sum()
 
-    row = valid.sample(1, weights=probs).iloc[0]
-    geom = row.geometry
-
-    if geom.geom_type == "MultiPolygon":
-        geom = geom.geoms[rng.integers(len(geom.geoms))]
-
-    return sample_point_in_polygon(geom, rng)
-
+    return geoms, probs
+#endregion
 
 #region sampling Destination
 
@@ -171,7 +164,13 @@ def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng
 
 
 #region TAZ mapping and region-level OD counters
-def build_region_od_table(G: nx.MultiDiGraph,od_counts,*,micro_attr: str = "locality",locality_to_region: dict[str, str] | None = None,) -> pd.DataFrame:
+def build_region_od_table(
+    G: nx.MultiDiGraph,
+    od_counts,
+    *,
+    micro_attr: str = "locality",
+    locality_to_region: dict[str, str] | None = None,
+) -> pd.DataFrame:
     """
     Build an OD matrix table aggregated by region or locality.
 
@@ -237,8 +236,22 @@ def build_region_od_table(G: nx.MultiDiGraph,od_counts,*,micro_attr: str = "loca
         fill_value=0,
     )
 
-    od_table = od_table.reindex(index = constants.REGION_ORDER, columns=constants.REGION_ORDER)
-
+    if locality_to_region is not None:
+        od_table = od_table.reindex(
+            index=constants.REGION_ORDER,
+            columns=constants.REGION_ORDER,
+            fill_value=0,
+        )
+    else:
+        # Keep locality-level labels when no region mapping is requested.
+        locality_order = sorted(
+            set(od_table.index.to_list()) | set(od_table.columns.to_list())
+        )
+        od_table = od_table.reindex(
+            index=locality_order,
+            columns=locality_order,
+            fill_value=0,
+        )
 
     return od_table
 #endregion
@@ -270,6 +283,7 @@ def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=3000,):
 
     return c
 
+#TODO i can def optimise this code
 def gen_demand_OD_counter(
     G,
     gdf_residential,
@@ -279,40 +293,41 @@ def gen_demand_OD_counter(
     beta: float = DEFAULT_BETA,
     max_dist: float | None = None,
 ):
-    """
-    Generate sparse weighted OD list:
-        (origin_node, destination_node, weight)
-
-    Weight corresponds to how many times this OD pair
-    was sampled (Monte Carlo approximation of demand).
-    """
     od_counts = Counter()
 
-    for _ in range(n_trips):
-        origin_pt = sample_point_from_regions_weighted(
-            gdf_residential, rng
-        )
+    # Precompute once
+    residential_geoms, residential_probs = prepare_region_sampling(gdf_residential)
 
-        destination_pt = sample_destination_gravity(
+    # Sample which residential polygon each trip uses
+    poly_idxs = rng.choice(
+        len(residential_geoms),
+        size=n_trips,
+        p=residential_probs
+    )
+
+    # Sample all origin points
+    origin_pts = [sample_point_in_polygon(residential_geoms[i], rng) for i in poly_idxs]
+
+    # Sample all destination points
+    dest_pts = [
+        sample_destination_gravity(
             origin_pt,
             gdf_destinations,
             rng,
             beta=beta,
             max_dist=max_dist,
         )
+        for origin_pt in origin_pts
+    ]
 
-        origin_node = ox.distance.nearest_nodes(
-            G, origin_pt.x, origin_pt.y
-        )
-        dest_node = ox.distance.nearest_nodes(
-            G, destination_pt.x, destination_pt.y
-        )
+    # Batch nearest-node lookup
+    origin_nodes = ox.distance.nearest_nodes(G, [p.x for p in origin_pts], [p.y for p in origin_pts],)
 
-        # Skip trivial OD
-        if origin_node == dest_node:
-            continue
+    dest_nodes = ox.distance.nearest_nodes(G, [p.x for p in dest_pts], [p.y for p in dest_pts],)
 
-        od_counts[(origin_node, dest_node)] += 1
+    for o, d in zip(origin_nodes, dest_nodes):
+        if o != d:
+            od_counts[(o, d)] += 1
 
     return od_counts
 
