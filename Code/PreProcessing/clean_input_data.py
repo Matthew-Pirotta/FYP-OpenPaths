@@ -100,6 +100,8 @@ def remove_self_loops(G:MultiDiGraph):
     print(f"removed {len(loops)} self loops")
     G.remove_edges_from(loops)
 
+    return G
+
 
 def add_max_speed(G):
     """
@@ -253,11 +255,11 @@ def add_grades(G:MultiDiGraph):
 #endregion
 
 
+#TODO this is gonna cuase problems for sumo
 def ensure_bidirectional_bike(G_drive: MultiDiGraph):
     """
     Create a synthetic edge for bikes allowing for bidrectional flow
     """
-
     #NOTE This is not creating artifical lanes because the lane counts are set to 0
     # Wiedmann did not have this issue as their ground source thruth was an undirected graph, and created a directed graph from there
     new_edges = []

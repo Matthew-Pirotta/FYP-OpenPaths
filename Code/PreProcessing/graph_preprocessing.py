@@ -42,8 +42,7 @@ def load_network(location, simplify) -> MultiDiGraph:
         #TODO edge attributes code is being dupplicated in the __create_master graph. Also didnt set False values:
 
         G_master = __create_master_graph(G_bike, G_drive)
-        G_master = ox.truncate.largest_component(G_master, strongly=True)
-
+        
         return G_master
 
 
@@ -76,30 +75,29 @@ def audit_elevation_and_grade(G, label=""):
         print("sample bad edges:", bad_edges[:10])
 
 
-def clean_graph(G:MultiDiGraph, place_name):
+#TODO finalise the structure
+def clean_simplified_graph(G:MultiDiGraph, place_name):
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
 
+    #NOTE that manual projection does not need to be done for length as the add_edge_lengths function is called automatically by the graph graph_from_x functions
+
     # --------------------
-    clean_input_data.remove_self_loops(G)
     G = clean_input_data.add_elevation_data(G)
     G = clean_input_data.impute_missing_elevation(G)
-    G = clean_input_data.set_roundabouts_oneway(G)
 
     clean_input_data.merge_semantically_equivalent_road_tags(G)
     clean_input_data.collapse_road_tag_lists(G)
     G = clean_input_data.add_max_speed(G)
     clean_input_data.standardise_edge_atr(G)
-    clean_input_data.ensure_edge_geometries(G)
-    clean_input_data.ensure_bidirectional_bike(G)
 
     # simplify topology (may change geometries), then recompute accurate lengths
-    graph_structure.simplify_multidigraph_in_place(G)
+    #graph_structure.simplify_multidigraph_in_place(G)
+
+    clean_input_data.ensure_bidirectional_bike(G)
+
     
-    # ensures accurate 'length' in meters
     G = ox.project_graph(G) 
 
-
-    #G = ox.distance.add_edge_lengths(G) # This is reprojecting the lenghts after already projecting
     G = clean_input_data.add_grades(G)
 
     enrich_attributes.bike_safety_classification(G)
@@ -111,3 +109,12 @@ def clean_graph(G:MultiDiGraph, place_name):
     G = enrich_attributes.assign_spatial_context(G, gdf_regions_proj, gdf_local_proj)
 
     return G, gdf_regions_proj, gdf_local_proj
+
+
+def clean_unsimplified_graph(G:MultiDiGraph):
+    clean_input_data.remove_self_loops(G)
+    G = clean_input_data.set_roundabouts_oneway(G)
+
+    clean_input_data.ensure_edge_geometries(G)
+
+    return G

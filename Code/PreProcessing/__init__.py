@@ -3,4 +3,4 @@ from .enrich_attributes import *
 from .graph_preprocessing import *
 from .graph_structure import *
 
-__all__ = ["clean_graph"]
+__all__ = ["clean_simplified_graph"]

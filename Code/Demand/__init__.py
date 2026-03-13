@@ -2,7 +2,6 @@ from .ODGeneration import (
     DEFAULT_BETA,
     DESTINATION_WEIGHTS,
     sample_point_in_polygon,
-    sample_point_from_regions_weighted,
     infer_destination_type_and_subtype,
     prepare_destinations_with_weights,
     sample_destination_gravity,
@@ -25,7 +24,6 @@ __all__ = [
 
     # OD generation functions
     "sample_point_in_polygon",
-    "sample_point_from_regions_weighted",
     "infer_destination_type_and_subtype",
     "prepare_destinations_with_weights",
     "sample_destination_gravity",

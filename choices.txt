@@ -69,3 +69,24 @@ Scale               Limited to small/medium areas           Scales to entire cit
 Complexity          Nonlinear/Bi-level (NP-Hard)            Linear (LP) / Rounding
 Solve Time          Days for small networks                 Minutes for small networks
 Key Limitation      Computationally prohibitive             Ignores road-width impact on speed
+
+-------
+
+SUMO mapping
+made roundabouts one way, as orignally are 2 way and was causing one lane to be counterflow.
+
+
+
+Choices
+1.	Work on raw graph. 
++no need for mapping logic 
+-More edges to work with, increased run time
+-Edges are less meaningful due to them just being for geometry
+~ need to have a project and un projected raw graph
+~ could have multiple nodes bias for curves have caused a bias in the topological metrics?
+
+2. Work on simplified graph and map changes back to unsimplifed graph
++ simplified can be projected whilst the unsimplied can remain unprojected
++ edge reallocation is more meaningful
+
+went with 2.
