@@ -29,19 +29,20 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
 
         return G_master
 
-def load_network(location) -> MultiDiGraph:
+def load_network(location, simplify) -> MultiDiGraph:
         print(f"Loading OSM networks for {location}...")
-        G_bike = ox.graph_from_place(location, network_type="bike", simplify=True, retain_all=False)
+        G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
         nx.set_edge_attributes(G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
         #TODO should be drive_service?
-        G_drive = ox.graph_from_place(location, network_type="drive", simplify=True, retain_all=False)
+        G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
         G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         nx.set_edge_attributes(G_drive,True,"car_allowed")
         #TODO edge attributes code is being dupplicated in the __create_master graph. Also didnt set False values:
 
         G_master = __create_master_graph(G_bike, G_drive)
+        G_master = ox.truncate.largest_component(G_master, strongly=True)
 
         return G_master
 
@@ -82,6 +83,7 @@ def clean_graph(G:MultiDiGraph, place_name):
     clean_input_data.remove_self_loops(G)
     G = clean_input_data.add_elevation_data(G)
     G = clean_input_data.impute_missing_elevation(G)
+    G = clean_input_data.set_roundabouts_oneway(G)
 
     clean_input_data.merge_semantically_equivalent_road_tags(G)
     clean_input_data.collapse_road_tag_lists(G)

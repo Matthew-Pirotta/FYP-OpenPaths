@@ -295,3 +295,18 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
         reallocated.append((v, u, 0))
 
     return reallocated
+
+
+#region others
+
+def set_roundabouts_oneway(G:MultiDiGraph):
+    """This is done to prevent a lane being counterflow in roundabouts during the sumo simulation"""
+    for u, v, k, d in G.edges(keys=True, data=True):
+        # Check if the edge is part of a roundabout
+        if d.get("junction") == "roundabout":
+            # Force it to be one-way
+            d["oneway"] = True 
+    
+    return G
+
+#endregion

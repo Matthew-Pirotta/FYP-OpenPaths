@@ -15,6 +15,7 @@ def total_cost_from_paths(G, paths, weight_attr):
         total += w * cost
     return total
 
+
 def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current", "bike_cost_penalty"]):
     """
     Compute a single shortest (bike-optimal) path for each OD pair.
@@ -41,6 +42,22 @@ def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current"
             continue
 
     return paths
+
+def calculate_path_metrics(G, od_trips, weight_attr="length"):
+    """
+    Separated logic for path calculation. 
+    Returns the average cost (e.g., length in km) for a set of trips.
+    """
+    # Calculate paths (This is the slow part)
+    paths = compute_candidate_paths(G, od_trips, "car_cost_current")
+    
+    # Calculate total cost using your helper
+    total_m = total_cost_from_paths(G, paths, weight_attr)
+    
+    # Calculate average in km
+    total_trips = sum(w for (o, d, w) in od_trips)
+    avg_m = (total_m / total_trips)
+    return avg_m
 
 
 def compute_edge_importance(G, paths):
