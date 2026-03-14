@@ -44,8 +44,9 @@ def load_network(location, simplify) -> MultiDiGraph:
         #TODO further processing and setting of false
 
         #TODO should be drive_service?
+        #NOTE we want the drive network to specfically be weakly connected and not strongly connected
+        # As strongly connected networks will fail for one way rounds such as mosta
         G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
-        G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         
         G_master = __create_master_graph(G_bike, G_drive)
         
