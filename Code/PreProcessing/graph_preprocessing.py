@@ -15,32 +15,38 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
         G_master = nx.compose(G_drive, G_bike)
         G_master = ox.truncate.largest_component(G_master, strongly=False) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
 
-        # tag drive edges
-        for u, v, k, d in G_drive.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v, k):
-                continue
-            G_master[u][v][k]["car_allowed"] = True
-        
-        # tag bike edges
-        for u, v, k, d in G_bike.edges(keys=True, data=True):
-            if not G_master.has_edge(u,v, k):
-                continue
-            G_master[u][v][k]["bike_allowed"] = True
+        # initialize all master edges explicitly
+        for u, v, k in G_master.edges(keys=True):
+            G_master[u][v][k]["bike_allowed"] = False
+            G_master[u][v][k]["car_allowed"] = False
+
+        # mark drive edges
+        for u, v, k in G_drive.edges(keys=True):
+            if G_master.has_edge(u, v, k):
+                G_master[u][v][k]["car_allowed"] = True
+
+        #TODO NOTE, truncate largest component on the unsimplified car network was too aggresive and lost a majoirty of the roads. Doing a scuffed fix
+        # initialize all master edges explicitly
+        for u, v, k, d in G_master.edges(keys=True, data=True):
+            if d.get("highway", "NA") in {"residential", "service", "tertiary", "secondary", "trunk"}:
+                G_master[u][v][k]["car_allowed"] = True
+
+        # mark bike edges
+        for u, v, k in G_bike.edges(keys=True):
+            if G_master.has_edge(u, v, k):
+                G_master[u][v][k]["bike_allowed"] = True
 
         return G_master
 
 def load_network(location, simplify) -> MultiDiGraph:
         print(f"Loading OSM networks for {location}...")
         G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
-        nx.set_edge_attributes(G_bike,True,"bike_allowed")
         #TODO further processing and setting of false
 
         #TODO should be drive_service?
         G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
         G_drive = ox.truncate.largest_component(G_drive, strongly=True)
-        nx.set_edge_attributes(G_drive,True,"car_allowed")
-        #TODO edge attributes code is being dupplicated in the __create_master graph. Also didnt set False values:
-
+        
         G_master = __create_master_graph(G_bike, G_drive)
         
         return G_master
