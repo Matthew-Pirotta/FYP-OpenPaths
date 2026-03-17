@@ -254,6 +254,81 @@ def build_region_od_table(
         )
 
     return od_table
+
+
+
+def build_region_od_tables_from_timeline(
+    timeline,
+    G,
+    *,
+    micro_attr: str = "locality",
+    locality_to_region: dict[str, str] | None = None,
+):
+    """
+    Build a list of OD matrices from a timeline structure.
+
+    Parameters
+    ----------
+    timeline : list[dict]
+        Output from gen_od_trips_timeline()
+    G : nx.MultiDiGraph
+    micro_attr : str
+        Node attribute storing locality
+    locality_to_region : dict | None
+        Optional mapping for aggregation
+
+    Returns
+    -------
+    list of dicts
+        [
+            {
+                "begin": int,
+                "end": int,
+                "od_table": DataFrame
+            },
+            ...
+        ]
+    """
+
+    results = []
+
+    for interval in timeline:
+
+        od_table = build_region_od_table(
+            G,
+            interval["ods"],
+            micro_attr=micro_attr,
+            locality_to_region=locality_to_region,
+        )
+
+        results.append({
+            "begin": interval["begin"],
+            "end": interval["end"],
+            "od_table": od_table
+        })
+
+    return results
+
+def build_total_region_od_table(
+    timeline,
+    G,
+    *,
+    micro_attr="locality",
+    locality_to_region=None,
+):
+
+    all_ods = []
+
+    for interval in timeline:
+        all_ods.extend(interval["ods"])
+
+    return build_region_od_table(
+        G,
+        all_ods,
+        micro_attr=micro_attr,
+        locality_to_region=locality_to_region,
+    )
+
 #endregion
 
 #region gen_OD

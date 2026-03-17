@@ -12,10 +12,11 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
     best_od_norm_matrix = None 
     best_od_locality_matrix = None
     best_od_locality_pairs= None
-    best_od_timeline = None
+    best_od_locality_timeline_tables = None
     min_rmse = float('inf')
 
     for b in beta_range:
+        #TODO im not likeing the code duplication and redudnacy with having to generate aggregrate and wholes for both od_pairing and matrix
         print(f"workong on beta {b}")
         # 1. Generate OD with the specific beta
         # Assuming your gen_OD_trips function accepts a beta parameter
@@ -37,7 +38,7 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
             min_rmse = rmse
             best_od_norm_matrix = od_matrix_norm.copy()
             best_od_locality_pairs = od
-            best_od_timeline = od_timeline
+            best_od_locality_timeline_tables = ODGeneration.build_region_od_tables_from_timeline(od_timeline, G_drive)
             best_od_locality_matrix = ODGeneration.build_region_od_table(G_drive, od)
         
         # 4. Path Lengths (Optional toggle)
@@ -54,7 +55,7 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
 
     # Convert to DataFrame for easy analysis
     df_sweep = pd.DataFrame(results)
-    return df_sweep, best_od_norm_matrix, best_od_locality_matrix, best_od_locality_pairs, best_od_timeline,  min_rmse
+    return df_sweep, best_od_norm_matrix, best_od_locality_matrix, best_od_locality_pairs, best_od_locality_timeline_tables,  min_rmse
 
 
 def calculate_random_baseline(G, gdf_residential, gdf_destinations, real_locality_od_normalized, rng, n_trips=50_000, compute_lengths=False):

@@ -67,33 +67,42 @@ def sumo_safe_shift_polygons(net, gdf):
     return gdf_shifted
 
 
-def write_od_matrix(timeline, outfile):
+def write_od_matrix(od_timeline_tables, outfile):
     """
-    Write SUMO OD matrix from timeline structure.
+    Write SUMO OD matrix from region OD tables.
 
     Parameters
     ----------
-    timeline : list[dict]
-        Output from gen_od_trips_timeline()
+    od_timeline_tables : list[dict]
+        Output from build_region_od_tables_from_timeline()
     outfile : str
         Path to od_matrix.xml
     """
 
     with open(outfile, "w") as f:
+
         f.write("<data>\n")
 
-        for interval in timeline:
-            f.write(f'  <interval begin="{interval["begin"]}" end="{interval["end"]}">\n')
+        for interval in od_timeline_tables:
 
-            for origin, dest, trips in interval["ods"]:
+            begin = interval["begin"]
+            end = interval["end"]
+            od_table = interval["od_table"]
 
-                if trips <= 0:
-                    continue
+            f.write(f'  <interval begin="{begin}" end="{end}">\n')
 
-                f.write(
-                    f'    <tazRelation from="{origin}" '
-                    f'to="{dest}" count="{int(trips)}"/>\n'
-                )
+            for origin in od_table.index:
+                for dest in od_table.columns:
+
+                    trips = int(od_table.loc[origin, dest])
+
+                    if trips <= 0:
+                        continue
+
+                    f.write(
+                        f'    <tazRelation from="{origin}" '
+                        f'to="{dest}" count="{trips}"/>\n'
+                    )
 
             f.write("  </interval>\n")
 
