@@ -390,6 +390,80 @@ def gen_OD_trips(
 
     return ods
 
+
+def gen_od_trips_timeline(
+    list_total_trips_per_hour: list[int],
+    G,
+    gdf_residential,
+    gdf_destinations,
+    rng,
+    random_frac: float = 0.0,
+    beta: float = DEFAULT_BETA,
+    max_dist: float | None = None,
+    min_random_dist: float = 3000,
+):
+    """
+    Generate OD trips across multiple hours.
+
+    Returns
+    -------
+    list of dicts:
+        [
+            {
+                "begin": int,
+                "end": int,
+                "ods": [(o,d,w), ...]
+            },
+            ...
+        ]
+    """
+
+    intervals = []
+    for hour, n_trips in enumerate(list_total_trips_per_hour):
+
+        begin = hour * 3600
+        end = (hour + 1) * 3600
+
+        ods = gen_OD_trips(
+            G,
+            gdf_residential,
+            gdf_destinations,
+            rng,
+            n_trips=n_trips,
+            random_frac=random_frac,
+            beta=beta,
+            max_dist=max_dist,
+            min_random_dist=min_random_dist,
+        )
+
+        intervals.append({
+            "begin": begin,
+            "end": end,
+            "ods": ods
+        })
+
+    return intervals
+
+
+def aggregate_timeline_ods(timeline):
+    """
+    Sum all OD flows across intervals.
+
+    Returns
+    -------
+    Counter[(origin,destination)] -> total trips
+    """
+
+    total_counter = Counter()
+
+    for interval in timeline:
+        for origin, dest, trips in interval["ods"]:
+            total_counter[(origin, dest)] += trips
+
+    return total_counter
+
+
+
 def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
     """
     Returns a normalized list of ODPair objects for the flow solver.

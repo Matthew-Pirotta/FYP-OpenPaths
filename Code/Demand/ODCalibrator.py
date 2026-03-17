@@ -6,20 +6,21 @@ from Demand import ODGeneration, paths_util
 import constants
 
 def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
-                    real_od_normalized, rng, beta_range, n_trips=50_000, compute_lengths=False):
+                    real_od_normalized, rng, beta_range, list_total_trips_per_hour, n_trips=50_000, compute_lengths=False):
 
     results = []
     best_od_norm_matrix = None 
     best_od_locality_matrix = None
     best_od_locality_pairs= None
+    best_od_timeline = None
     min_rmse = float('inf')
 
     for b in beta_range:
         print(f"workong on beta {b}")
         # 1. Generate OD with the specific beta
         # Assuming your gen_OD_trips function accepts a beta parameter
-        od = ODGeneration.gen_OD_trips(G_drive, gdf_residential, gdf_destinations, rng, 
-                                    n_trips=n_trips, beta=b)
+        od_timeline = ODGeneration.gen_od_trips_timeline(list_total_trips_per_hour, G_drive, gdf_residential, gdf_destinations, rng, beta=b)
+        od = ODGeneration.aggregate_timeline_ods(od_timeline)
         
         # 2. Build and Normalize Matrix
         od_df = ODGeneration.build_region_od_table(G_drive, od, locality_to_region=constants.LOCALITY_TO_REGION)
@@ -36,6 +37,7 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
             min_rmse = rmse
             best_od_norm_matrix = od_matrix_norm.copy()
             best_od_locality_pairs = od
+            best_od_timeline = od_timeline
             best_od_locality_matrix = ODGeneration.build_region_od_table(G_drive, od)
         
         # 4. Path Lengths (Optional toggle)
@@ -52,7 +54,7 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
 
     # Convert to DataFrame for easy analysis
     df_sweep = pd.DataFrame(results)
-    return df_sweep, best_od_norm_matrix, best_od_locality_matrix, best_od_locality_pairs, min_rmse
+    return df_sweep, best_od_norm_matrix, best_od_locality_matrix, best_od_locality_pairs, best_od_timeline,  min_rmse
 
 
 def calculate_random_baseline(G, gdf_residential, gdf_destinations, real_locality_od_normalized, rng, n_trips=50_000, compute_lengths=False):

@@ -9,6 +9,8 @@ from .ODGeneration import (
     gen_random_OD_counter,
     gen_demand_OD_counter,
     gen_OD_trips,
+    aggregate_timeline_ods,
+    gen_od_trips_timeline,
 )
 
 from .paths_util import (
@@ -31,6 +33,8 @@ __all__ = [
     "gen_random_OD_counter",
     "gen_demand_OD_counter",
     "gen_OD_trips",
+    "aggregate_timeline_ods",
+    "gen_od_trips_timeline",
 
     # Path utilities
     "total_cost_from_paths",
