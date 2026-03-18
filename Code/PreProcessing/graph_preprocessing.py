@@ -25,12 +25,13 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
             if G_master.has_edge(u, v, k):
                 G_master[u][v][k]["car_allowed"] = True
 
+        """        
         #TODO NOTE, truncate largest component on the unsimplified car network was too aggresive and lost a majoirty of the roads. Doing a scuffed fix
         # initialize all master edges explicitly
         for u, v, k, d in G_master.edges(keys=True, data=True):
             if d.get("highway", "NA") in {"residential", "service", "tertiary", "secondary", "trunk"}:
                 G_master[u][v][k]["car_allowed"] = True
-
+        """
         # mark bike edges
         for u, v, k in G_bike.edges(keys=True):
             if G_master.has_edge(u, v, k):
