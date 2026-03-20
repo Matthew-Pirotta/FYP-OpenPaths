@@ -165,7 +165,9 @@ def build_OD_lines_gdf(G, OD, *, use_weights=True):
     lines = []
     weights = []
 
-    for o, d, w in OD:
+    #TODO
+    #for o, d, w in OD:
+    for (o, d), w in OD.items():
         xo, yo = G.nodes[o]["x"], G.nodes[o]["y"]
         xd, yd = G.nodes[d]["x"], G.nodes[d]["y"]
 

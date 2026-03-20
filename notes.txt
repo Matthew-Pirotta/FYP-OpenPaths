@@ -152,3 +152,4 @@ https://www.youtube.com/watch?v=wZycufsTEGU
 https://sumo.dlr.de/docs/Definition_of_Vehicles%2C_Vehicle_Types%2C_and_Routes.html
 https://sumo.dlr.de/docs/Tools/Trip.html
 https://sumo.dlr.de/docs/Simulation/Output/Summary.html
+https://sumo.dlr.de/docs/Tools/Visualization.html

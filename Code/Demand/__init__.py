@@ -1,10 +1,8 @@
 from .ODGeneration import (
     DEFAULT_BETA,
-    DESTINATION_WEIGHTS,
     sample_point_in_polygon,
-    infer_destination_type_and_subtype,
-    prepare_destinations_with_weights,
-    sample_destination_gravity,
+    infer_destination_type,
+    sample_destination_for_purpose,
     build_region_od_table,
     gen_random_OD_counter,
     gen_demand_OD_counter,
@@ -22,13 +20,11 @@ from .paths_util import (
 __all__ = [
     # OD generation constants
     "DEFAULT_BETA",
-    "DESTINATION_WEIGHTS",
 
     # OD generation functions
     "sample_point_in_polygon",
-    "infer_destination_type_and_subtype",
-    "prepare_destinations_with_weights",
-    "sample_destination_gravity",
+    "infer_destination_type",
+    "sample_destination_for_purpose",
     "build_region_od_table",
     "gen_random_OD_counter",
     "gen_demand_OD_counter",

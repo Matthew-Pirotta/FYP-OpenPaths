@@ -46,76 +46,57 @@ def prepare_region_sampling(gdf_regions):
     return geoms, probs
 #endregion
 
+#TODO do the trips but also in reverse?
+#TODO allow for residential to residentail trips?
 #region sampling Destination
 
-DESTINATION_WEIGHTS = {
-    # --- High-importance (anchor trips) ---
-    "hospital": 5.0,
-    "school": 5.0,
-    "university": 5.0,
-
-    # --- Work-related ---
-    "government": 4.0,
-
-    # --- Retail & services ---
-    "supermarket": 3.0,
-    "mall": 3.0,
-    "shop": 3.0,
-
-    # --- Food / social ---
-    "restaurant": 2.0,
-    "convenience":2.0,
-    "cafe": 2.0,
-    "fast_food": 2.0,
-    "pub": 2.0,
-    "bar":2.0,
-
-    # --- Low-priority / fallback ---
-    "default": 1.0
-}
-
-
-def infer_destination_type_and_subtype(row):
-    if pd.notna(row.get("office")):
-        return "office", row.get("office")
-    if pd.notna(row.get("shop")):
-        return "shop", row.get("shop")
-    if pd.notna(row.get("amenity")):
-        return "amenity", row.get("amenity")
-    return "other", None
-
-
-def prepare_destinations_with_weights(gdf, weight_map):
-    """
-    Prepare a canonical destination layer for OD generation.
-
-    Output columns:
-        - geometry (Point)
-        - dest_type (amenity | shop | office | other)
-        - dest_subtype (e.g. cafe, school, office)
-        - weight (float)
-    """
+def prepare_destinations(gdf):
     gdf = gdf.copy()
 
-    # Ensure point geometry
     if not all(gdf.geometry.geom_type == "Point"):
         gdf["geometry"] = gdf.geometry.centroid
 
-    # Infer destination type and subtype
-    inferred = gdf.apply(infer_destination_type_and_subtype, axis=1)
-    gdf["dest_type"] = inferred.apply(lambda x: x[0])
-    gdf["dest_subtype"] = inferred.apply(lambda x: x[1])
+    gdf["dest_type"] = gdf.apply(infer_destination_type, axis=1)
 
-    # Assign weights
-    def get_weight(row):
-        subtype = row["dest_subtype"]
-        return weight_map.get(subtype, weight_map["default"])
+    return gdf[["geometry", "dest_type"]]
 
-    gdf["weight"] = gdf.apply(get_weight, axis=1)
+def infer_destination_type(row):
+    office = row.get("office")
+    shop = row.get("shop")
+    amenity = row.get("amenity")
 
-    return gdf[["geometry", "dest_type", "dest_subtype", "weight"]]
+    # --- Office → work ---
+    if pd.notna(office):
+        return "work"
 
-def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng ,beta:float=DEFAULT_BETA, max_dist:float|None=None,):
+    # --- Shop → shopping ---
+    if pd.notna(shop):
+        return "shop"
+
+    # --- Amenity → mapped ---
+    if pd.notna(amenity):
+        if amenity in constants.AMENITY_KEEP:
+            return amenity
+        else:
+            return "other"
+
+def sample_trip_purpose(rng, purpose_shares):
+    purposes = np.array(list(purpose_shares.keys()))
+    probs = np.array(list(purpose_shares.values()), dtype=float)
+    probs /= probs.sum()
+    idx = rng.choice(len(purposes), p=probs)
+    return purposes[idx]
+
+def filter_destinations_for_purpose(destinations, purpose, mapping):
+    allowed = mapping[purpose]
+
+    if "*" in allowed:
+        return destinations
+
+    return destinations[destinations["dest_type"].isin(allowed)]
+
+
+def sample_destination_for_purpose( origin:Point, destinations:gpd.GeoDataFrame, purpose, purpose_to_subtypes, rng ,beta:float=DEFAULT_BETA, max_dist:float|None=None,):
     """
     Sample an destinatio using an exponential gravity model.
 
@@ -135,32 +116,29 @@ def sample_destination_gravity( origin:Point, destinations:gpd.GeoDataFrame, rng
     shapely.geometry.Point
     """
 
-    # Compute distances
-    distances = destinations.geometry.distance(origin)
+    candidates = filter_destinations_for_purpose(
+            destinations, purpose, purpose_to_subtypes
+        )
+
+    if len(candidates) == 0:
+        raise ValueError(f"No destinations for purpose={purpose}")
+
+    distances = candidates.geometry.distance(origin)
 
     if max_dist is not None:
         mask = distances <= max_dist
-        destinations = destinations[mask]
+        candidates = candidates[mask]
         distances = distances[mask]
 
-        if len(destinations) == 0:
-            raise ValueError("No destinations within max_dist")
+        if len(candidates) == 0:
+            raise ValueError(f"No destinations within max_dist for {purpose}")
 
-    # Gravity weights = destination attractiveness * distance decay
-    if "weight" in destinations.columns:
-        attractiveness = destinations["weight"].to_numpy(dtype=float)
-    else:
-        attractiveness = np.ones(len(destinations), dtype=float)
-    weights = attractiveness * np.exp(-beta * distances.values)
- 
-    
+    weights = np.exp(-beta * distances.to_numpy())
 
-    # Normalize
     probs = weights / weights.sum()
+    idx = rng.choice(len(candidates), p=probs)
 
-    # Sample
-    idx = rng.choice(len(destinations), p=probs)
-    return destinations.iloc[idx].geometry
+    return candidates.iloc[idx].geometry
 
 
 #region TAZ mapping and region-level OD counters
@@ -370,35 +348,47 @@ def gen_demand_OD_counter(
 ):
     od_counts = Counter()
 
-    # Precompute once
     residential_geoms, residential_probs = prepare_region_sampling(gdf_residential)
 
-    # Sample which residential polygon each trip uses
     poly_idxs = rng.choice(
         len(residential_geoms),
         size=n_trips,
         p=residential_probs
     )
 
-    # Sample all origin points
     origin_pts = [sample_point_in_polygon(residential_geoms[i], rng) for i in poly_idxs]
 
-    # Sample all destination points
-    dest_pts = [
-        sample_destination_gravity(
-            origin_pt,
-            gdf_destinations,
-            rng,
+    dest_pts = []
+
+    for origin_pt in origin_pts:
+        purpose = sample_trip_purpose(rng, constants.PURPOSE_SHARES)
+
+        dest_pt = sample_destination_for_purpose(
+            origin=origin_pt,
+            destinations=gdf_destinations,
+            purpose=purpose,
+            rng=rng,
+            purpose_to_subtypes=constants.PURPOSE_TO_TYPES,
             beta=beta,
             max_dist=max_dist,
         )
-        for origin_pt in origin_pts
-    ]
+        dest_pts.append(dest_pt)
 
-    # Batch nearest-node lookup
-    origin_nodes = ox.distance.nearest_nodes(G, [p.x for p in origin_pts], [p.y for p in origin_pts],)
 
-    dest_nodes = ox.distance.nearest_nodes(G, [p.x for p in dest_pts], [p.y for p in dest_pts],)
+    if not dest_pts:
+        return od_counts
+
+    origin_nodes = ox.distance.nearest_nodes(
+        G,
+        [p.x for p in origin_pts[:len(dest_pts)]],
+        [p.y for p in origin_pts[:len(dest_pts)]],
+    )
+
+    dest_nodes = ox.distance.nearest_nodes(
+        G,
+        [p.x for p in dest_pts],
+        [p.y for p in dest_pts],
+    )
 
     for o, d in zip(origin_nodes, dest_nodes):
         if o != d:

@@ -90,3 +90,19 @@ Choices
 + edge reallocation is more meaningful
 
 went with 2.
+
+
+sumo visulation went with the overlap matrics instead of the non overlap, due to it being more accurate for heavy conngestion?
+
+
+----
+OD calibration
+
+Trip OD data is region based, which isnt detailed enough and thus i went for a calibration technique.
+
+Using the trip type data directly vs Calibration target. Calibration target is very noisy and simulation is stocastic, so not ideal and went with direct import.
+
+One global beta decay value vs trip specific beta. Global beta is simpler, prob not a large difference between each trip type. Trip specific beta would be noisy?
+
+Conclusion:
+Calibrating latent spatial parameters, while directly using observed behavioural distributions.

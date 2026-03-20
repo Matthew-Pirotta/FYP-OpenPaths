@@ -128,3 +128,53 @@ REGION_ORDER = [
     "Western",
     "Northern",
 ]
+
+PURPOSE_SHARES = {
+    "commuting": 0.422,
+    "education": 0.116,
+    "escort_education": 0.049,
+    "shopping": 0.093,
+    "personal_errands": 0.078,
+    "medical": 0.038,
+    "recreation": 0.089,
+    "visiting": 0.060,
+    "other": 0.055,
+}
+
+PURPOSE_TO_TYPES = {
+    "commuting": ["bank", "work", "shop"],  
+    "education": ["college", "language_school", "university"],
+    "escort_education": ["child_care", "school"], # Trips to drop off/pick up students
+    "shopping": ["mall", "marketplace", "shop"],
+    "personal_errands": ["bank", "library", "monastery", "place_of_worship", "social_facility", "veterinary"],
+    "medical": ["dentist", "doctors", "hospital", "pharmacy"],
+    "recreation": ["bar", "bench", "cafe", "fast_food", "food_court", "restaurant"],
+    "visiting": ["*"],  #TODO residential
+    "other": ["other"]
+}
+
+AMENITY_KEEP = {
+    "bank",
+    "bar",
+    "bench",
+    "cafe",
+    "child_care",
+    "college",
+    "dentist",
+    "doctors",
+    "fast_food",
+    "food_court",
+    "hospital",
+    "language_school",
+    "library",
+    "mall",
+    "marketplace",
+    "monastery",
+    "pharmacy",
+    "place_of_worship",
+    "restaurant",
+    "school",
+    "social_facility",
+    "university",
+    "veterinary"
+}
