@@ -68,6 +68,7 @@ def load_edgedata(file):
                 "edge": edge.attrib["id"],
                 "speed": float(edge.attrib.get("speed", 0)),
                 "occupancy": float(edge.attrib.get("occupancy", 0)),
+                "entered": float(edge.attrib.get("entered", 0)),
 
                 "overlapDensity": float(edge.attrib.get("overlapDensity", 0)),
                 "overlapTraveltime": float(edge.attrib.get("overlapTraveltime", 0)),

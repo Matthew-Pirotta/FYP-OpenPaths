@@ -127,6 +127,14 @@ def plot_simulation_results(summary_df, tripinfo_df, edgedata_df,):
     plt.show()
 
 
+    plt.figure()
+    edgedata_df["entered"].hist(bins=40, range=(0, 500))
+    plt.xlabel("Count Vehicles Entered Edge")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of edge use")
+    plt.show()
+
+
 def plot_sumo_edges(net, metric_dict=None, title="SUMO Plot", cmap=plt.cm.managua_r, colorbar_label="Value", **kwargs:PlotSettings):
     # Merge defaults with overrides
     settings = renderer.DEFAULTS | kwargs
