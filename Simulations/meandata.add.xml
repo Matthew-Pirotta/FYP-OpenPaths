@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <edgeData id="edges_all" file="Output/edgedata_all.xml" period="60"/>
+    <laneData id="lanes_all" file="Output/lanedata_all.xml" period="60"/>
+
+    <edgeData id="edges_car" file="Output/edgedata_car.xml" period="60" vTypes="passenger"/> 
+    <laneData id="lanes_car" file="Output/lanedata_car.xml" period="60" vTypes="passenger"/>
+
+    <edgeData id="edges_bike" file="Output/edgedata_bike.xml" period="60" vTypes="bicycle"/>
+    <laneData id="lanes_bike" file="Output/lanedata_bike.xml" period="60" vTypes="bicycle"/>
+</additional>

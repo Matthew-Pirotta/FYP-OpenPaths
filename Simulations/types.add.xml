@@ -1,0 +1,11 @@
+<additional>
+    <vType id="car_junction_safe"
+           vClass="passenger"
+           lcAssertive="1.10"
+           lcPushy="0.00"
+           lcPushyGap="0.20"
+           lcImpatience="0.05"/>
+
+    <vType id="bike" vClass="bicycle"/>
+
+</additional>
