@@ -189,6 +189,7 @@ def ensure_edge_geometries(G:MultiDiGraph):
             d["geometry"] = geom
 
 
+
 #region Grade
 def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGraph:
     print("Adding elevation data.....")
