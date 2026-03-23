@@ -17,6 +17,8 @@ from .paths_util import (
     compute_edge_importance,
 )
 
+from .sumoRun import (run_simulation)
+
 __all__ = [
     # OD generation constants
     "DEFAULT_BETA",
@@ -36,4 +38,6 @@ __all__ = [
     "total_cost_from_paths",
     "compute_candidate_paths",
     "compute_edge_importance",
+
+    "run_simulation"
 ]

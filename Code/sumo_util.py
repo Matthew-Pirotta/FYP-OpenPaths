@@ -73,6 +73,7 @@ def load_edgedata(file):
                 "overlapDensity": float(edge.attrib.get("overlapDensity", 0)),
                 "overlapTraveltime": float(edge.attrib.get("overlapTraveltime", 0)),
                 "flow": float(edge.attrib.get("flow", 0)),
+                "waitingTime":  float(edge.attrib.get("waitingTime", 0)),
             })
 
 
