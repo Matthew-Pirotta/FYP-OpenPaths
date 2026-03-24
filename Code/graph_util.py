@@ -72,61 +72,6 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     return stays_connected
 
 
-def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
-    """Convert an edge into a fietsstraat (bike-priority street).
-    #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
-    u, v, k = edge_id
-    #print(f"edge_id: {edge_id}")
-    d = G[u][v][k]
-    reallocated = []
-
-    # 1. Cars still allowed but as guests
-    d["car_allowed"] = True
-    # No lane reduction: cars share space
-    
-    # 2. Bikes explicitly allowed
-    d["bike_allowed"] = True
-    
-    # 3. Fietsstraat classification
-    d["infra_type"] = "fietsstraat"
-    
-    # 4. Set safety level appropriate to fietsstraat
-    d["safety"] = SafetyClass.SAFE
-    d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
-
-    #5.speed_kph
-    d["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
-    #d["car_cost_current"] = d["car_cost_if_fietsstraat"]
-
-    # 6. After conversion, edge should not be converted again
-    d["reallocatable"] = False
-
-    reallocated.append((u, v, k))
-    
-    # 7. Directionality preserved:
-    # If reverse exists, classify it too (but do NOT create new synthetic edges)
-    if G.has_edge(v, u):
-        #TODO this 0 indexing could be a problem depending on if i keep the multi digraph
-        rev_key = next(iter(G[v][u].keys()))
-        d_rev = G[v][u][rev_key]
-        d_rev["car_allowed"] = True
-        d_rev["bike_allowed"] = True
-        d_rev["infra_type"] = "fietsstraat"
-        d_rev["safety"] = SafetyClass.SAFE
-        d_rev["speed_kph_current"] = constants.FIETSSTRAAT_SPEED_KMH
-        #d_rev["car_cost_current"] = d["car_cost_if_fietsstraat"]
-        d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.SAFE])
-        d_rev["reallocatable"] = False
-        reallocated.append((v, u, rev_key))
-
-    #TODO
-    impedance_calculator.update_bike_costs(G, reallocated)
-
-    
-    return reallocated
-
-
-
 def _create_bike_edge(G, u, v, base_data):
     """
     Create a new bike-only edge parallel to (u, v).
@@ -144,7 +89,7 @@ def _create_bike_edge(G, u, v, base_data):
     new_data["infra_type"] = "dedicated_bike_lane"
 
     # Ensure safe defaults
-    new_data["bike_lanes"] = d.get("bike_lanes", 0) + 1
+    new_data["bike_lanes"] = new_data.get("bike_lanes", 0) + 1
 
     # Safety
     new_data["safety"] = SafetyClass.VERY_SAFE
@@ -172,14 +117,14 @@ def _has_dedicated_bike_edge(G, u, v):
 #TODO this is all useless idk
 def reallocate_edge_dedicated(G: MultiDiGraph, edge_id: tuple,) -> list[tuple]:
     """
-    Create dedicated bike edges instead of modifying existing ones.
+    Create dedicated bike edges instead of modifying existing ones. Changes are made inplace
     """
     u, v, k = edge_id
     d = G[u][v][k]
 
     reallocated = []
 
-    d["car_lanes"] = d["car_lanes"] - 1
+    d["car_lanes"] = max(0, d.get("car_lanes", 1) - 1)
 
     # Prevent repeated reallocations
     d["reallocatable"] = False
@@ -279,9 +224,40 @@ def recombine_subgraphs_into_master(
             if is_reallocated(d_sub) and not is_reallocated(d_master):
                 # Apply reallocation in master
                 # IMPORTANT: call the same canonical logic
-                reallocate_edge_to_fietsstraat(G_new, (u, v, k))
+                reallocate_edge_dedicated(G_new, (u, v, k))
 
     return G_new
+
+
+#region simpligfied and unsimplified mapping
+def apply_reallocation_to_unsimplified(G_simplified: MultiDiGraph,G_unsimplified: MultiDiGraph,reallocated_edges: list[tuple],) -> MultiDiGraph:
+    """
+    Projects reallocations from simplified graph onto unsimplified graph.
+    """
+
+    G_processed_unsimplified = copy.deepcopy(G_unsimplified)
+
+    processed = set()
+    for u, v, k in reallocated_edges:
+        d_s = G_simplified[u][v][k]
+
+        merged = d_s.get("merged_edges", [])
+        if not merged:
+            continue
+
+        for (u0, v0) in merged:
+
+            # avoid double application
+            if (u0, v0) in processed:
+                continue
+            processed.add((u0, v0))
+        
+            edge_id_unsimplified = (u0, v0, 0)
+            reallocate_edge_dedicated(G_processed_unsimplified, edge_id_unsimplified)
+
+    return G_processed_unsimplified
+            
+#endregion
 
 #region segment logic
 # Applying steet segment level reallocation logic to formulation
