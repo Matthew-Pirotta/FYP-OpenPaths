@@ -10,6 +10,7 @@ from constants import SafetyClass
 from PreProcessing import enrich_attributes
 from typing import Literal
 from NetworkOptimisation import impedance_calculator
+from shapely.geometry import LineString
 
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
@@ -69,6 +70,7 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
     # Choose strong or weak connectivity depending on road model
     return stays_connected
 
+
 def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]:
     """Convert an edge into a fietsstraat (bike-priority street).
     #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
@@ -122,71 +124,87 @@ def reallocate_edge_to_fietsstraat(G:MultiDiGraph, edge_id:tuple) -> list[tuple]
     
     return reallocated
 
+
+
+def _create_bike_edge(G, u, v, base_data):
+    """
+    Create a new bike-only edge parallel to (u, v).
+    Returns (u, v, new_key)
+    """
+    new_data = copy.deepcopy(base_data)
+
+    # Mode permissions
+    new_data["car_allowed"] = False
+    new_data["bike_allowed"] = True
+
+    # Infrastructure classification
+    new_data["highway"] = "cycleway"
+    new_data["bicycle"] = "designated"
+    new_data["infra_type"] = "dedicated_bike_lane"
+
+    # Ensure safe defaults
+    new_data["bike_lanes"] = d.get("bike_lanes", 0) + 1
+
+    # Safety
+    new_data["safety"] = SafetyClass.VERY_SAFE
+    new_data["risk_factor"] = float(
+        enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE]
+    )
+
+    # Prevent reallocation loops
+    new_data["reallocatable"] = False
+
+    # Add as a new parallel edge
+    new_key = G.add_edge(u, v, **new_data)
+
+    return (u, v, new_key)
+
+def _has_dedicated_bike_edge(G, u, v):
+    if not G.has_edge(u, v):
+        return False
+
+    for k, d in G[u][v].items():
+        if d.get("highway") == "cycleway":
+            return True
+    return False
+
 #TODO this is all useless idk
-def reallocate_edge_dedicated(
-    G: MultiDiGraph,
-    edge_id: tuple,
-) -> list[tuple]:
+def reallocate_edge_dedicated(G: MultiDiGraph, edge_id: tuple,) -> list[tuple]:
     """
-    Convert a street segment to have a dedicated bike lane.
-
-    Parameters
-    ----------
-    G : MultiDiGraph
-    edge_id : (u, v, k)
-        Representative directed arc for the segment being converted.
-    
-    Returns
-    -------
-    list of (u, v, k)
-        Arcs that were modified/created and should have bike costs recomputed
+    Create dedicated bike edges instead of modifying existing ones.
     """
-
-    #NOTE “iteration = one street segment reallocated,” not “one directed edge edited.”"""
     u, v, k = edge_id
-    #print(f"edge_id: {edge_id}")
     d = G[u][v][k]
+
     reallocated = []
 
-    # 1. Cars still allowed but as guests
-    d["car_allowed"] = True
-    
-    # 2. Bikes explicitly allowed
-    d["bike_allowed"] = True
-    
-    # 3. Fietsstraat classification
-    d["infra_type"] = "dedicated_bike_lane"
-    d["bike_lanes"] = d.get("bike_lanes") + 1
+    d["car_lanes"] = d["car_lanes"] - 1
 
-    # 4. Set safety level appropriate to fietsstraat
-    d["safety"] = SafetyClass.VERY_SAFE
-    d["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE])
-
-    # 6. After conversion, edge should not be converted again
+    # Prevent repeated reallocations
     d["reallocatable"] = False
 
-    reallocated.append((u, v, k))
-    
-    # 7. Directionality preserved:
-    # If reverse exists, classify it too
-    if G.has_edge(v, u):
-        #TODO this 0 indexing could be a problem depending on if i keep the multi digraph
-        rev_key = next(iter(G[v][u].keys()))
-        d_rev = G[v][u][rev_key]
-        d_rev["car_allowed"] = True
-        d_rev["bike_allowed"] = True
-        d_rev["infra_type"] = "dedicated_bike_lane"
-        d_rev["bike_lanes"] = d_rev.get("bike_lanes") + 1
+    # --- 2. Create forward bike edge if missing ---
+    if not _has_dedicated_bike_edge(G, u, v):
+        new_edge = _create_bike_edge(G, u, v, d)
+        reallocated.append(new_edge)
 
-        d_rev["safety"] = SafetyClass.VERY_SAFE
-        d_rev["risk_factor"] = float(enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE])
+    # --- 3. Handle reverse direction ---
+    if not _has_dedicated_bike_edge(G, v, u):
+        # use reverse edge as template
+        d_rev = copy.deepcopy(d)
+        d_rev["grade"] = -d_rev.get("grade",0)
+        d_rev["geometry"] = LineString(d_rev.get("geometry").coords[::-1])
+
+        new_edge_rev = _create_bike_edge(G, v, u, d_rev)
+        reallocated.append(new_edge_rev)
+
+        # also lock original reverse edge
         d_rev["reallocatable"] = False
-        reallocated.append((v, u, rev_key))
 
+    # --- 4. Recompute costs only for new bike edges ---
     #TODO
-    enrich_attributes.update_bike_costs(G, reallocated)
+    #enrich_attributes.update_bike_costs(G, reallocated)
 
-    
     return reallocated
 
 

@@ -7,7 +7,7 @@ import osmnx as ox
 import pandas as pd
 import inspect
 from tqdm.notebook import tqdm
-
+from collections.abc import Callable
 
 from . import heuristic
 
@@ -68,9 +68,9 @@ def run_locality_task(args):
     # final evaluation on the final working graph
     append_evaluation(G_working, iteration=n_iterations, clear_diff=False)
 
-    return evaluations
+    return G_working, evaluations
 
-def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
+def run_global(G_master, heuristic_func:Callable, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
     """Run heuristic on all subgraphs in parallel."""
     
     if not subgraphs:
@@ -78,14 +78,14 @@ def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, 
 
     tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, EVALUATION_MOD)
              for name, G_sub_master in subgraphs.items()]
-    results = []
+    evaluations = []
+    graphs = dict()
 
     if not parallel:
         for task in tqdm(tasks, desc="Processing localities", unit="loc"):
-            locality_results = run_locality_task(task)
-            results.extend(locality_results)
-        return pd.DataFrame(results)
-
+            new_graph, locality_results = run_locality_task(task)
+            evaluations.extend(locality_results)
+            graphs[heuristic_func.__name__] = new_graph
 
     if parallel:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -95,11 +95,12 @@ def run_global(G_master, heuristic_func, subgraphs = None, EVALUATION_MOD = 10, 
                 for future in as_completed(futures):
                     locality_name = futures[future]
                     try:
-                        locality_results = future.result()
-                        results.extend(locality_results)
+                        new_graph, locality_results = future.result()
+                        evaluations.extend(locality_results)
+                        graphs[heuristic_func.__name__] = new_graph
                     except Exception as e:
                         print(f"❌ Locality {locality_name} failed: {e}")
                     pbar.update(1)
 
-    df_results = pd.DataFrame(results)
-    return df_results
+    evaluations_df = pd.DataFrame(evaluations)
+    return graphs, evaluations_df

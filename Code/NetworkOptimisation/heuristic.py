@@ -128,7 +128,7 @@ def _evaluate_network_metrics(
         return results
 
     G_lcc = largest_by_length(G_target)
-    connectedness = calc_connectedness(G_target, G_lcc)
+    connectedness = { "num_components": 0, "lcc_length": 0,} #TODO NOTE TEMP #calc_connectedness(G_target, G_lcc)
     centrality = calc_centrality(G_lcc, k_sample=k_sample)
     directness = calc_directness(G_target, G_drive_reference, k_sample=k_sample)
     coverage = calc_coverage(G_target)
