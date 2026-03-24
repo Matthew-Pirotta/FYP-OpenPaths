@@ -46,6 +46,7 @@ def make_highway_subgraph(G:MultiDiGraph,
 def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
     #NOTE TODO made copy so its not read-only lol
+    # NOTE TODO use nx.subgraph_view if they are just views
     edges = [(u, v, k) 
                 for u, v, k, d in G.edges(keys=True, data=True) 
                 if condition(d)]

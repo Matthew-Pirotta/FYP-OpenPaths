@@ -60,6 +60,11 @@ car_allowed: bool (is from drive network)
 bike_allowed: bool (True if from bike network, then set false if safety class is Dangerous)
 reallocatable: bool (False if bridge or car not allowed)
 bike_cost_penalty: float,
+"regions": list[str],
+"localities": list[str],
+"highway"?
+"bicycle"?
+"cycleway"?
 
 constants:
 grade: float
@@ -67,6 +72,13 @@ width: float
 region: str
 locality: str
 bike_cost_base: float,
+
+
+
+
+Node_atributes:
+"elevation": float
+
 
 -----
 
