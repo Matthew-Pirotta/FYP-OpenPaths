@@ -106,3 +106,16 @@ One global beta decay value vs trip specific beta. Global beta is simpler, prob 
 
 Conclusion:
 Calibrating latent spatial parameters, while directly using observed behavioural distributions.
+
+
+---
+Final heuristic choices
+
+Component-based as the pure topology/connectivity baseline
+OD-weighted edge betweenness as the flow-aware structural heuristic (uses bike_cost_penalty this is od weighted, grade and percieved travel), (pick edges that lie on many high-demand bike shortest paths)
+OD-weighted car/bike-cost model as the behaviorally grounded main method (is this edge worth reallocating given both sides of the system?)
+
+Note that 
+Closeness is about being “near the rest of the network.” Once you start trying to OD-weight it, the interpretation gets muddy fast. It stops being a clean centrality measure and becomes some custom accessibility construct that is harder to explain than it is worth.
+
+but can still use it as a network evaluation

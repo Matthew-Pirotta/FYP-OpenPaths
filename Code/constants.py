@@ -3,11 +3,11 @@ from enum import StrEnum, auto
 from typing import NamedTuple
 
 class SafetyClass(StrEnum):
-    VERY_SAFE = "very_safe"
-    SAFE = "safe"
-    MODERATE = "moderate"
+    PROTECTED = "very_safe"
+    PAINTED = "safe"
+    LOW_TRAFFIC = "moderate"
     CAUTION = "caution"
-    DANGEROUS = "dangerous"
+    HIGH_TRAFFIC = "dangerous"
     UNSUITABLE = "unsuitable"
     UNCLASSIFIED = "unclassified"
 
@@ -19,12 +19,10 @@ class InfraType(StrEnum):
     FIETSSTRAAT = auto() #shared but bike priority
 
 SAFETY_COLORS = {
-        SafetyClass.VERY_SAFE: "magenta",
-        SafetyClass.SAFE: "green",
-        SafetyClass.MODERATE: "orange",
-        SafetyClass.CAUTION: "red",
-        SafetyClass.DANGEROUS: "darkred",
-        SafetyClass.UNCLASSIFIED: "gray",
+        SafetyClass.PROTECTED: "magenta",
+        SafetyClass.PAINTED: "green",
+        SafetyClass.LOW_TRAFFIC: "orange",
+        SafetyClass.HIGH_TRAFFIC: "darkred",
     }
 
 HWY_COLORS = {

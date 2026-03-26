@@ -42,8 +42,8 @@ def plot_categorical_attr(
     legend_elements = [
         mpatches.Patch(
             color=color, 
-            label=str(val).replace("_", " ").title() if hasattr(val, 'name') else str(val).title()
-        )
+            label=val.name.replace("_", " ").title() if hasattr(val, 'name') else str(val).title()
+            )
         for val, color in mapping.items()
     ]
     
@@ -59,6 +59,8 @@ def plot_categorical_attr(
     ax.axis("off")
     fig.tight_layout()
     plt.show()
+
+    return fig,ax
 
 
 def plot_boolean_attribute(G, attribute):

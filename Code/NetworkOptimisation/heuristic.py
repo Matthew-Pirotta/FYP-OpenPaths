@@ -170,7 +170,7 @@ def heuristic_edge_betweenness_centrality(
     if k_sample is not None:
         k_sample = min(G_bikeable.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
 
-    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="length", normalized=True, k=k_sample, seed=seed)
+    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="bike_cost_penalty", normalized=True, k=k_sample, seed=seed)
 
     reallocatable_edges_between_cent = {k: v for k, v in edges_between_cent.items() if k in reallocatable_edges}
     #Some sort of intersection on the edge_between centrality

@@ -751,7 +751,7 @@ def _build_current_network_baseline_fixings(
         u, v, k = a
         d = G[u][v][k]
         safety = (d.get("safety"))
-        if safety == SafetyClass.SAFE:
+        if safety == SafetyClass.PAINTED:
             baseline_fixed_bike_1.add(a)
         else:
             baseline_fixed_bike_0.add(a)

@@ -12,11 +12,10 @@ from shapely.geometry import Point
 
 
 safety_to_risk_factor_map = {
-    SafetyClass.VERY_SAFE: 0.5, 
-    SafetyClass.SAFE: 1,
-    SafetyClass.MODERATE: 1.5,
-    SafetyClass.CAUTION: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
-    SafetyClass.DANGEROUS: 4,#TODO highway twice as costly ig?
+    SafetyClass.PROTECTED: 0.5, 
+    SafetyClass.PAINTED: 1,
+    SafetyClass.LOW_TRAFFIC: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
+    SafetyClass.HIGH_TRAFFIC: 4,#TODO highway twice as costly ig?
     SafetyClass.UNCLASSIFIED:2,
 }
 
@@ -37,7 +36,7 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
             infra_type = "bike_lane"          # painted lane
         elif cycleway in {"shared", "shared_lane"}:
             infra_type = "mixed"              # no markings, shared with cars
-        elif highway in {"residential", "living_street"}:
+        elif highway in {"residential"}:
             infra_type = "mixed"              # low-speed streets
         else:
             infra_type = "car"                # default assumption
@@ -46,26 +45,24 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         data["infra_type"] = infra_type
 
         # ==========================================================
-        # STEP 2 — Safety classification (fietsstraat support)
+        # STEP 2 — Safety classification 
         # ==========================================================
         if infra_type == "cycle_track":
-            classification = SafetyClass.VERY_SAFE
+            classification = SafetyClass.PROTECTED
 
         elif infra_type == "bike_lane":
-            classification = SafetyClass.SAFE
+            classification = SafetyClass.PAINTED
 
         elif infra_type == "mixed":
             # Potentially a good fietsstraat candidate
-            if highway in {"residential", "living_street"}:
-                classification = SafetyClass.MODERATE
-            else:
-                classification = SafetyClass.CAUTION
+            if highway in {"residential",}:
+                classification = SafetyClass.LOW_TRAFFIC
 
         elif highway in {"primary", "secondary", "trunk", "tertiary"}:
-            classification = SafetyClass.DANGEROUS
+            classification = SafetyClass.HIGH_TRAFFIC
 
         elif highway in {"track", "service", "non_motorised"}:
-            classification = SafetyClass.MODERATE
+            classification = SafetyClass.LOW_TRAFFIC
 
         else:
             classification = SafetyClass.UNCLASSIFIED
@@ -77,7 +74,7 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         data["risk_factor"] = float(safety_to_risk_factor_map[classification])
 
         # Dangerous roads should not be bikeable
-        if classification == SafetyClass.DANGEROUS:
+        if classification == SafetyClass.HIGH_TRAFFIC:
             #TODO NOTE this was set to false orginally, but was causing proble,s
             #I have now set it true, and made the bikeable subgraph reachable to all nodes
             data["bike_allowed"] = True

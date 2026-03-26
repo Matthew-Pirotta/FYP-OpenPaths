@@ -15,11 +15,11 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
     fig, axs = plt.subplots(1, len(snapshot_iters), figsize=(4 * len(snapshot_iters), 6))
 
     safety_to_color_map = {
-        SafetyClass.VERY_SAFE: "magenta",
-        SafetyClass.SAFE: "green",
-        SafetyClass.MODERATE: "orange",
+        SafetyClass.PROTECTED: "magenta",
+        SafetyClass.PAINTED: "green",
+        SafetyClass.LOW_TRAFFIC: "orange",
         SafetyClass.CAUTION: "red",
-        SafetyClass.DANGEROUS: "darkred",
+        SafetyClass.HIGH_TRAFFIC: "darkred",
         SafetyClass.UNCLASSIFIED: "gray",
     }
 
@@ -41,14 +41,14 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
             ]
         else:
             edge_colors = [
-                "green" if d.get("safety") in {SafetyClass.VERY_SAFE, SafetyClass.SAFE}
+                "green" if d.get("safety") in {SafetyClass.PROTECTED, SafetyClass.PAINTED}
                 else "red" if d.get("reallocatable") is False
                 else "gray"
                 for _, _, d in G_temp.edges(data=True)
             ]
 
         edge_linewidth = [
-            1.2 if d.get("safety") in {SafetyClass.VERY_SAFE, SafetyClass.SAFE} else 0.5
+            1.2 if d.get("safety") in {SafetyClass.PROTECTED, SafetyClass.PAINTED} else 0.5
             for _, _, d in G_temp.edges(data=True)
         ]
 

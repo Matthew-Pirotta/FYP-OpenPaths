@@ -14,13 +14,15 @@ class PlotSettings(TypedDict, total=False):
     bgcolor: str
     alpha: float
     edge_color: str
+    dpi: int  
 
 DEFAULTS: PlotSettings = {
     "node_size": 0,
     "node_color": "black",
     "edge_linewidth": 0.5,
     "bgcolor": "white",
-    "edge_color": "black"
+    "edge_color": "black",
+    "dpi": 100,
 }
 
 def draw_graph(G, ax=None, **kwargs: PlotSettings):
@@ -28,9 +30,10 @@ def draw_graph(G, ax=None, **kwargs: PlotSettings):
     settings: dict = DEFAULTS | kwargs
     # Pull out the one thing that doesn't go into plot_graph
     fig_size = settings.pop("fig_size", _DEFAULT_FIGSIZE)
+    dpi = settings.pop("dpi") 
 
     if ax is None:
-        fig, ax = plt.subplots(figsize=fig_size)
+        fig, ax = plt.subplots(figsize=fig_size, dpi=dpi)
     else:
         fig = ax.figure 
 

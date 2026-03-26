@@ -25,7 +25,7 @@ def make_reallocatable_subgraph(G:MultiDiGraph)-> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("reallocatable") == True)
 
 def make_protected_subgraph(G:MultiDiGraph)-> MultiDiGraph:
-    return _filter_edges(G, lambda d: d.get("safety") in [SafetyClass.SAFE, SafetyClass.VERY_SAFE])
+    return _filter_edges(G, lambda d: d.get("safety") in [SafetyClass.PAINTED, SafetyClass.PROTECTED])
 
 def make_region_subgraph(G: MultiDiGraph, region: str) -> MultiDiGraph:
     """
@@ -92,9 +92,9 @@ def _create_bike_edge(G, u, v, base_data):
     new_data["bike_lanes"] = new_data.get("bike_lanes", 0) + 1
 
     # Safety
-    new_data["safety"] = SafetyClass.VERY_SAFE
+    new_data["safety"] = SafetyClass.PROTECTED
     new_data["risk_factor"] = float(
-        enrich_attributes.safety_to_risk_factor_map[SafetyClass.VERY_SAFE]
+        enrich_attributes.safety_to_risk_factor_map[SafetyClass.PROTECTED]
     )
 
     # Prevent reallocation loops
@@ -210,8 +210,8 @@ def recombine_subgraphs_into_master(
     def is_reallocated(d):
         return (
             d.get("infra_type") == "fietsstraat"
-            or d.get("safety") == SafetyClass.SAFE
-            or d.get("safety") == SafetyClass.VERY_SAFE
+            or d.get("safety") == SafetyClass.PAINTED
+            or d.get("safety") == SafetyClass.PROTECTED
         )
 
     # Iterate over all subgraphs
