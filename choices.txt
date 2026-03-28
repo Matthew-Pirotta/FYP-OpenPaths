@@ -111,11 +111,16 @@ Calibrating latent spatial parameters, while directly using observed behavioural
 ---
 Final heuristic choices
 
-Component-based as the pure topology/connectivity baseline
-OD-weighted edge betweenness as the flow-aware structural heuristic (uses bike_cost_penalty this is od weighted, grade and percieved travel), (pick edges that lie on many high-demand bike shortest paths)
-OD-weighted car/bike-cost model as the behaviorally grounded main method (is this edge worth reallocating given both sides of the system?)
+1. Component-based as the pure topology/connectivity baseline
+2. OD-weighted edge betweenness as the flow-aware structural heuristic 
+    - (uses bike_cost_penalty this is od weighted, grade and percieved travel),
+    - (pick edges that lie on many high-demand bike shortest paths)
+    - OD run over bike_cost -> select the edge with highest edge importance
+3. OD-weighted car/bike-cost model as the behaviorally grounded main method (is this edge worth reallocating given both sides of the system?)
 
 Note that 
 Closeness is about being “near the rest of the network.” Once you start trying to OD-weight it, the interpretation gets muddy fast. It stops being a clean centrality measure and becomes some custom accessibility construct that is harder to explain than it is worth.
 
-but can still use it as a network evaluation
+but can still use it as a network evaluation. Note i should be using my custom OD weighted metrics and not the networkx defaults?
+
+stopping condition should be some harm cap and not elbow method.

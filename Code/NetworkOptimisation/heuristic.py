@@ -8,6 +8,8 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 from shapely.ops import unary_union
+from Demand import paths_util
+import nx_parallel
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
@@ -81,11 +83,11 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED) -> dict:
         k_eff = k_sample
     
     # Edge betweenness centrality - connectors for network resilience
-    edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed)
+    edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight="length", normalized=True, k=k_eff, seed = seed, backend="parallel")
     mean_edge_between_cent = float(np.mean(list(edge_between_cent.values())))
 
     #closeness_centrality - how close all other nodes are
-    node_close_cent = nx.closeness_centrality(G_lcc, distance="length")
+    node_close_cent = nx.closeness_centrality(G_lcc, distance="length", backend="parallel")
     mean_node_close_cent = float(np.mean(list(node_close_cent.values())))
 
     degrees = [d for _, d in G_lcc.degree()]
@@ -128,7 +130,7 @@ def _evaluate_network_metrics(
         return results
 
     G_lcc = largest_by_length(G_target)
-    connectedness = { "num_components": 0, "lcc_length": 0,} #TODO NOTE TEMP #calc_connectedness(G_target, G_lcc)
+    connectedness = calc_connectedness(G_target, G_lcc)
     centrality = calc_centrality(G_lcc, k_sample=k_sample)
     directness = calc_directness(G_target, G_drive_reference, k_sample=k_sample)
     coverage = calc_coverage(G_target)
@@ -170,7 +172,7 @@ def heuristic_edge_betweenness_centrality(
     if k_sample is not None:
         k_sample = min(G_bikeable.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
 
-    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="bike_cost_penalty", normalized=True, k=k_sample, seed=seed)
+    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="bike_cost_penalty", normalized=True, k=k_sample, seed=seed, backend="parallel")
 
     reallocatable_edges_between_cent = {k: v for k, v in edges_between_cent.items() if k in reallocatable_edges}
     #Some sort of intersection on the edge_between centrality
@@ -184,6 +186,26 @@ def heuristic_edge_betweenness_centrality(
     print(max_between_cent_edge)    
     return max_between_cent_edge
 
+
+def heuristic_od_edge_betweenness(G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, OD, edge_importance):
+    reallocatable_edges = set(G_realloc.edges(keys=True))
+
+    paths = paths_util.compute_candidate_paths(
+        G_bikeable,
+        OD,
+        path_weight_metric="bike_cost_penalty",
+    )
+
+    edge_importance = paths_util.compute_edge_importance(G_bikeable, paths)
+
+    realloc_scores = {
+        e: edge_importance.get(e, 0.0)
+        for e in reallocatable_edges
+    }
+
+    best_edge = max(realloc_scores, key=realloc_scores.get)
+    return best_edge
+
 def heuristic_edge_closeness_centrality(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -196,7 +218,7 @@ def heuristic_edge_closeness_centrality(
     reallocatable_edges = set(G_realloc.edges(keys=True))
 
     # 2. Compute *node* closeness on the bikeable network
-    node_close = nx.closeness_centrality(G_bikeable, distance="length")
+    node_close = nx.closeness_centrality(G_bikeable, distance="length", backend="parallel")
 
     # 3. Convert node closeness → edge closeness
     edge_scores = {}

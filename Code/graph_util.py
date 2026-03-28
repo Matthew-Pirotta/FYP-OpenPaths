@@ -47,6 +47,7 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
     #NOTE subgraph is view and read-only
     #NOTE TODO made copy so its not read-only lol
     # NOTE TODO use nx.subgraph_view if they are just views
+    #NOTE nvm creating a view will actually take more time, as every time a NetworkX algorithm checks an edge in a View, it has to execute your Python lambda function.
     edges = [(u, v, k) 
                 for u, v, k, d in G.edges(keys=True, data=True) 
                 if condition(d)]

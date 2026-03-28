@@ -31,7 +31,7 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
         for diff_data in diff_log[:it]:
             edge = diff_data.get("edge")
 
-            graph_util.reallocate_edge_to_fietsstraat(G_temp, edge)
+            graph_util.reallocate_edge_dedicated(G_temp, edge)
 
         # Edge coloring
         if show_classification:
