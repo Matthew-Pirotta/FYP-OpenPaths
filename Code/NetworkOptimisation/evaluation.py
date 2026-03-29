@@ -29,50 +29,6 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
         "lcc_length": lcc_length,
     }
 
-
-#TODO this should be over the OD matrix instead
-def calc_directness(Gb_lcc:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None, seed=SEED):
-    bike_nodes = list(Gb_lcc.nodes())
-    drive_nodes = set(G_drive.nodes()) 
-
-    # Choose sampled origins/destinations
-    if k_sample is None:
-        origins = bike_nodes
-        dests = bike_nodes
-    else:
-        rng = random.Random(seed)
-        k_eff = min(k_sample, len(bike_nodes))
-        origins = rng.sample(bike_nodes, k_eff)
-        dests = rng.sample(bike_nodes, k_eff)
-
-    ratios = []
-    for o in origins:
-        for d in dests:
-            if o == d:
-                continue
-
-            # Ensure the drive network also includes the pair
-            if o not in drive_nodes or d not in drive_nodes:
-                continue
-
-            try:
-                L_bike = nx.shortest_path_length(Gb_lcc, source=o, target=d, weight="length")
-                L_drive = nx.shortest_path_length(G_drive, source=o, target=d, weight="length")
-            except (nx.NetworkXNoPath, nx.NodeNotFound):
-                continue
-
-            if L_drive > 0:
-                ratios.append(L_bike / L_drive)
-
-    if len(ratios) == 0:
-        return {
-            "mean_directness": 0,
-        }
-
-    return {
-        "mean_directness": float(np.mean(ratios)),
-    }
-
 #TODO idk so many thoughts
 # is missing_demand and covered demand extra?
 # Technically could keep the whole bike network, and not just the largest protected bike?
@@ -118,6 +74,7 @@ def calc_directness_od( G_bike: MultiDiGraph, G_drive: MultiDiGraph, OD,
     the mean but counted in missing demand.
     """
     weighted_sum = 0.0
+    covered_demand = 0.0
 
     bike_nodes = set(G_bike.nodes())
     drive_nodes = set(G_drive.nodes())
@@ -130,18 +87,15 @@ def calc_directness_od( G_bike: MultiDiGraph, G_drive: MultiDiGraph, OD,
             continue
 
         if o not in bike_nodes or d not in bike_nodes or o not in drive_nodes or d not in drive_nodes:
-            missing_demand += w
             continue
 
         try:
             L_bike = nx.shortest_path_length(G_bike, source=o, target=d, weight=bike_weight)
             L_drive = nx.shortest_path_length(G_drive, source=o, target=d, weight=drive_weight)
         except (nx.NetworkXNoPath, nx.NodeNotFound):
-            missing_demand += w
             continue
 
         if L_bike <= 0 or L_drive <= 0:
-            missing_demand += w
             continue
 
         directness_od = L_drive / L_bike
@@ -157,16 +111,6 @@ def calc_directness_od( G_bike: MultiDiGraph, G_drive: MultiDiGraph, OD,
 
 def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED, weight = "length") -> dict:
     """Calculate comprehensive centrality metrics for cycling network assessment"""
-    #NOTE full centrality is O(n^3), k is instead used to approximate
-    if k_sample is not None:
-        num_nodes = len(G_lcc.nodes)
-        k_eff = min(k_sample, num_nodes)
-    else:
-        k_eff = k_sample
-    
-    # Edge betweenness centrality - connectors for network resilience
-    edge_between_cent = nx.edge_betweenness_centrality(G_lcc, weight=weight, normalized=True, k=k_eff, seed = seed, backend="parallel")
-    mean_edge_between_cent = float(np.mean(list(edge_between_cent.values())))
 
     #closeness_centrality - how close all other nodes are
     node_close_cent = nx.closeness_centrality(G_lcc, distance=weight, backend="parallel")
@@ -176,8 +120,6 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED, weight = "le
     mean_degree = float(np.mean(degrees))
         
     return {
-        "mean_edge_betweenness": mean_edge_between_cent,
-        "mean_node_betweenness": 1,
         "mean_node_closeness": mean_node_close_cent,
         "mean_degree": mean_degree,
     }
@@ -220,10 +162,59 @@ def calc_coverage(G, buffer_m=500):
         "union_geom": union_geom  # useful for debugging/plotting
     }
 
+def calc_total_cost_od(
+    G_bike: MultiDiGraph,
+    OD,
+    weight: str = "bike_cost_penalty",
+) -> dict:
+    """
+    Compute total and mean OD-weighted bike generalized cost.
+    """
+    total_cost = 0.0
+    covered_demand = 0.0
+    missing_demand = 0.0
+    num_pairs = 0
+
+    bike_nodes = set(G_bike.nodes())
+
+    for o, d, w in OD:
+        if w <= 0 or o == d:
+            continue
+
+        if o not in bike_nodes or d not in bike_nodes:
+            missing_demand += w
+            continue
+
+        try:
+            c_bike = nx.shortest_path_length(G_bike, source=o, target=d, weight=weight)
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            missing_demand += w
+            continue
+
+        if c_bike < 0:
+            missing_demand += w
+            continue
+
+        total_cost += w * c_bike
+        covered_demand += w
+        num_pairs += 1
+
+    mean_cost = total_cost / covered_demand if covered_demand > 0 else 0.0
+
+    return {
+        "od_total_bike_cost": float(total_cost),
+        "od_mean_bike_cost": float(mean_cost),
+        "od_bike_cost_covered_demand": float(covered_demand),
+        "od_bike_cost_missing_demand": float(missing_demand),
+        "od_bike_cost_num_pairs": int(num_pairs),
+    }
+
+
 
 def _evaluate_network_metrics(
     G_target: MultiDiGraph,
     G_drive_reference: MultiDiGraph,
+    OD_pairs,
     *,
     k_sample=None,
     prefix: str = "",
@@ -231,16 +222,9 @@ def _evaluate_network_metrics(
 ) -> dict:
     """Evaluate graph-level metrics and prefix result keys when requested."""
     metric_names = [
-        "num_components",
-        "lcc_length",
-        "mean_edge_betweenness",
-        "mean_node_betweenness",
-        "mean_node_closeness",
-        "mean_degree",
-        "mean_directness",
-        "coverage_area_m2",
-        "coverage_area_km2",
-    ]
+            "num_components", "lcc_length", "mean_node_closeness", 
+            "mean_degree", "od_directness_mean", "coverage_area_m2", 
+            "coverage_area_km2", "od_total_bike_cost", "od_mean_bike_cost"]
 
     if G_target.number_of_nodes() == 0 or G_target.number_of_edges() == 0:
         results = {f"{prefix}{name}": 0.0 for name in metric_names}
@@ -252,22 +236,24 @@ def _evaluate_network_metrics(
     G_lcc = largest_by_length(G_target)
     connectedness = calc_connectedness(G_target, G_lcc)
     centrality = calc_centrality(G_lcc, k_sample=k_sample)
-    directness = calc_directness(G_target, G_drive_reference, k_sample=k_sample)
+    directness = calc_directness_od(G_target, G_drive_reference, OD_pairs)
+    costs = calc_total_cost_od(G_target, OD_pairs)
     coverage = calc_coverage(G_target)
 
-    results = {**connectedness, **centrality, **directness, **coverage}
+    results = {**connectedness, **centrality, **directness, **costs, **coverage}
     if not include_union_geom:
         results.pop("union_geom", None)
 
     return {f"{prefix}{k}": v for k, v in results.items()}
 
 
-def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None) -> dict:
+def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None, OD_pairs) -> dict:
     bike_results = _evaluate_network_metrics(
         G_protected,
         G_drive,
         k_sample=k_sample,
         prefix="",
+        OD_pairs=OD_pairs,
         include_union_geom=True,
     )
     car_results = _evaluate_network_metrics(
@@ -275,6 +261,7 @@ def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=
         G_drive,
         k_sample=k_sample,
         prefix="car_",
+        OD_pairs=OD_pairs,
         include_union_geom=False,
     )
     return {**bike_results, **car_results}
