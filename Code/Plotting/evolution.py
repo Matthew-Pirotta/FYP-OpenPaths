@@ -99,7 +99,7 @@ def plot_network_evolution(G_master, diff_log):
     norm = plt.Normalize(0, len(diff_log))
 
     for i, diff_data in enumerate(diff_log):
-        u, v, k = diff_data.get("edge")
+        u, v, k = diff_data
         if not G_master.has_edge(u, v, k):
             continue
 

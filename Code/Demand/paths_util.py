@@ -4,6 +4,8 @@ from collections import Counter, deque
 from constants import Arc, OD, Seg
 from networkx import MultiDiGraph
 import graph_util
+import nx_parallel
+
 
 #TODO depricated
 def total_cost_from_paths(G, paths, weight_attr):
@@ -36,7 +38,7 @@ def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current"
     for o, d, w in OD:
 
         try:
-            path = nx.shortest_path(G, o, d, weight=path_weight_metric)
+            path = nx.shortest_path(G, o, d, weight=path_weight_metric,  backend="parallel")
             paths[(o, d, w)] = path
         except nx.NetworkXNoPath:
             continue
