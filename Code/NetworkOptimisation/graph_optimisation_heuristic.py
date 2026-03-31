@@ -9,11 +9,11 @@ import inspect
 from tqdm.notebook import tqdm
 from collections.abc import Callable
 
-from . import heuristic
+from . import heuristic, evaluation
 
 def run_locality_task(args):
     """Worker function for a single locality."""
-    name, G_sub, n_iterations, heuristic_func, k_sample, EVALUATION_MOD = args
+    name, G_sub, n_iterations, heuristic_func, k_sample, od,  EVALUATION_MOD = args
     
     print(f"🏙️ Starting {name} in process")
     G_working = copy.deepcopy(G_sub)
@@ -27,7 +27,7 @@ def run_locality_task(args):
         G_protected = graph_util.make_protected_subgraph(G_master)
         G_drive = graph_util.make_drive_subgraph(G_master)
 
-        ev = heuristic.network_evaluation(G_protected, G_drive, k_sample=k_sample)
+        ev = evaluation.network_evaluation(G_protected, G_drive,OD_pairs=od, k_sample=k_sample,)
         ev["locality"] = name
         ev["iteration"] = iteration
         ev["diff_log"] = list(diff_log)  # store snapshot
@@ -70,13 +70,13 @@ def run_locality_task(args):
 
     return G_working, evaluations
 
-def run_global(G_master, heuristic_func:Callable, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
+def run_global(G_master, heuristic_func:Callable, od, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
     """Run heuristic on all subgraphs in parallel."""
     
     if not subgraphs:
         subgraphs = {"MASTER": G_master}
 
-    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, EVALUATION_MOD)
+    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD)
              for name, G_sub_master in subgraphs.items()]
     evaluations = []
     graphs = dict()

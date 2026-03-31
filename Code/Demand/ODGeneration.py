@@ -390,13 +390,18 @@ def gen_demand_OD_counter(
         [p.y for p in dest_pts],
     )
 
+    # Casting from numpy ints to normal python ints as there were some compatability issues
+    origin_nodes = [int(n) for n in origin_nodes]
+    dest_nodes = [int(n) for n in dest_nodes]
+
     for o, d in zip(origin_nodes, dest_nodes):
         if o != d:
             od_counts[(o, d)] += 1
 
     return od_counts
 
-
+#TODO im running the exact same od matrix for both cars and bikes and thus they are in the same quantity, idk if this is a problem tbh.
+#TODO seperate edge importance for cars and bikes? (i swear i had done this but idk)
 def gen_OD_trips(
     G,
     gdf_residential,

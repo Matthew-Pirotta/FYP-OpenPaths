@@ -35,3 +35,7 @@ OLD questions:
 ------
 Future Research
 - Use satelite immagry to map which roads have parking?
+
+----
+
+would be visually cool to plot of travelling distance time map of malta, given the modes.

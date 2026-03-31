@@ -79,7 +79,8 @@ def calc_directness_od( G_bike: MultiDiGraph, G_drive: MultiDiGraph, OD,
     bike_nodes = set(G_bike.nodes())
     drive_nodes = set(G_drive.nodes())
 
-    for o, d, w in OD:
+    print(OD)
+    for (o, d), w in OD.items():
         if w <= 0:
             continue
 
@@ -113,7 +114,7 @@ def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED, weight = "le
     """Calculate comprehensive centrality metrics for cycling network assessment"""
 
     #closeness_centrality - how close all other nodes are
-    node_close_cent = nx.closeness_centrality(G_lcc, distance=weight, backend="parallel")
+    node_close_cent = nx.closeness_centrality(G_lcc, distance=weight )
     mean_node_close_cent = float(np.mean(list(node_close_cent.values())))
 
     degrees = [d for _, d in G_lcc.degree()]
@@ -177,7 +178,7 @@ def calc_total_cost_od(
 
     bike_nodes = set(G_bike.nodes())
 
-    for o, d, w in OD:
+    for (o, d), w in OD.items():
         if w <= 0 or o == d:
             continue
 
@@ -236,7 +237,7 @@ def _evaluate_network_metrics(
     G_lcc = largest_by_length(G_target)
     connectedness = calc_connectedness(G_target, G_lcc)
     centrality = calc_centrality(G_lcc, k_sample=k_sample)
-    directness = calc_directness_od(G_target, G_drive_reference, OD_pairs)
+    directness = calc_directness_od(G_target, G_drive_reference, OD=OD_pairs)
     costs = calc_total_cost_od(G_target, OD_pairs)
     coverage = calc_coverage(G_target)
 
@@ -247,7 +248,7 @@ def _evaluate_network_metrics(
     return {f"{prefix}{k}": v for k, v in results.items()}
 
 
-def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, k_sample=None, OD_pairs) -> dict:
+def network_evaluation(G_protected:MultiDiGraph, G_drive:MultiDiGraph, OD_pairs, k_sample=None) -> dict:
     bike_results = _evaluate_network_metrics(
         G_protected,
         G_drive,
