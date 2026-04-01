@@ -119,6 +119,72 @@ LOCALITY_TO_REGION = {
     "San Pawl il-Baħar": "Northern",
 }
 
+LOCALITY_TO_POPULATION = {
+    # Southern Harbour
+    "Bormla": 4654,
+    "Il-Fgura": 13066,
+    "Il-Furjana": 1985,          # Floriana
+    "Ħal Luqa": 7249,
+    "Ħaż-Żabbar": 17148,
+    "Il-Kalkara": 3105,
+    "Il-Marsa": 5468,
+    "Raħal Ġdid": 9339,
+    "Santa Luċija": 2617,
+    "L-Isla": 2304,
+    "Ħal Tarxien": 9464,
+    "Il-Belt Valletta": 5157,    # Valletta
+    "Il-Birgu": 2261,
+    "Ix-Xgħajra": 2192,
+
+    # Northern Harbour
+    "Birkirkara": 25807,
+    "Il-Gżira": 10331,
+    "Ħal Qormi": 18099,
+    "Il-Ħamrun": 10514,
+    "L-Imsida": 13587,
+    "Pembroke": 3545,
+    "San Ġwann": 14244,
+    "Santa Venera": 8834,
+    "San Ġiljan": 11653,
+    "Is-Swieqi": 13044,
+    "Ta' Xbiex": 2092,
+    "Tal-Pietà": 5892,
+    "Tas-Sliema": 19655,
+
+    # South Eastern
+    "Birżebbuġa": 11844,
+    "Il-Gudja": 3229,
+    "Ħal Għaxaq": 5538,
+    "Ħal Kirkop": 2527,
+    "Ħal Safi": 2641,
+    "L-Imqabba": 3525,
+    "Il-Qrendi": 3148,
+    "Iż-Żejtun": 12409,
+    "Iż-Żurrieq": 12295,
+    "Marsaxlokk": 3988,
+    "Wied il-Għajn": 16804,      # Marsaskala
+
+    # Western
+    "Ħad-Dingli": 3865,
+    "Ħal Balzan": 4774,
+    "Ħal Lija": 3162,
+    "Ħ'Attard": 12268,
+    "Ħaż-Żebbuġ": 13785,
+    "L-Iklin": 3399,
+    "L-Imdina": 193,
+    "L-Imtarfa": 2566,
+    "Ir-Rabat": 11936,
+    "Is-Siġġiewi": 9318,
+
+    # Northern
+    "Ħal Għargħur": 3741,
+    "Il-Mellieħa": 12738,
+    "L-Imġarr": 4840,
+    "Il-Mosta": 23482,
+    "In-Naxxar": 16912,
+    "San Pawl il-Baħar": 32042,
+}
+
 REGION_ORDER = [
     "Southern Harbour",
     "Northern Harbour",

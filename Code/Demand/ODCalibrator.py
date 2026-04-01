@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from Demand import ODGeneration, paths_util
 import constants
 
-def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
+def run_beta_sweep(G_drive, residential_geoms, residential_probs, gdf_destinations,
                     real_od_normalized, rng, beta_range, list_total_trips_per_hour, n_trips=50_000, compute_lengths=False):
 
     results = []
@@ -20,7 +20,7 @@ def run_beta_sweep(G_drive, gdf_residential, gdf_destinations,
         print(f"workong on beta {b}")
         # 1. Generate OD with the specific beta
         # Assuming your gen_OD_trips function accepts a beta parameter
-        od_timeline = ODGeneration.gen_od_trips_timeline(list_total_trips_per_hour, G_drive, gdf_residential, gdf_destinations, rng, beta=b)
+        od_timeline = ODGeneration.gen_od_trips_timeline(list_total_trips_per_hour, G_drive, residential_geoms, residential_probs, gdf_destinations, rng, beta=b)
         od = ODGeneration.aggregate_timeline_ods(od_timeline)
         
         # 2. Build and Normalize Matrix

@@ -32,18 +32,71 @@ def sample_point_in_polygon(polygon, rng, max_tries=100):
 
     raise RuntimeError("Failed to sample point inside polygon")
 
-def prepare_region_sampling(gdf_regions):
-    """Weighted by area"""
-    valid = gdf_regions[
-        gdf_regions.geometry.notnull() &
-        ~gdf_regions.geometry.is_empty
-    ]
-
-    geoms = list(valid.geometry)
-    areas = np.array([geom.area for geom in geoms], dtype=float)
-    probs = areas / areas.sum()
-
+def prepare_population_sampling_from_joined_residential(gdf_residential_joined):
+    geoms = list(gdf_residential_joined.geometry)
+    probs = gdf_residential_joined["prob"].to_numpy(dtype=float)
     return geoms, probs
+
+
+def prepare_residential(gdf_residential):
+    """
+    Keep valid residential polygons and only required columns.
+    """
+    gdf = gdf_residential.copy()
+
+    gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty].copy()
+    gdf = gdf[["geometry"]].copy()
+
+    # explode multipolygons into separate polygons if needed
+    gdf = gdf.explode(index_parts=False).reset_index(drop=True)
+
+    # keep only polygonal geometries
+    gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
+
+    return gdf
+
+def attach_locality_and_population_to_residential( gdf_residential, gdf_localities, locality_to_population,):
+    res = gdf_residential.copy().reset_index(drop=True)
+    res["res_id"] = res.index
+
+    loc = gdf_localities[["name", "geometry"]].copy()
+
+    if res.crs != loc.crs:
+        loc = loc.to_crs(res.crs)
+
+    joined = gpd.sjoin( res, loc, how="inner", predicate="intersects",).copy()
+
+    joined = joined.rename(columns={"name": "locality"})
+
+    # if a residential polygon intersects multiple localities because of boundary issues,
+    # keep the first match
+    joined = joined.drop_duplicates(subset=["res_id"]).reset_index(drop=True)
+
+    joined["population"] = joined["locality"].map(locality_to_population)
+
+    missing = joined[joined["population"].isna()]
+    if len(missing) > 0:
+        print("Warning: residential polygons with missing population localities:")
+        print(sorted(missing["locality"].dropna().unique().tolist()))
+
+    joined = joined[joined["population"].notna()].copy()
+
+    joined["res_area"] = joined.geometry.area
+    joined["locality_res_area_total"] = joined.groupby("locality")["res_area"].transform("sum")
+
+    joined["raw_weight"] = (
+        joined["population"] *
+        joined["res_area"] / joined["locality_res_area_total"]
+    )
+
+    total = joined["raw_weight"].sum()
+    if total <= 0:
+        raise ValueError("Total residential sampling weight is zero.")
+
+    joined["prob"] = joined["raw_weight"] / total
+
+    return joined
+
 #endregion
 
 #TODO do the trips but also in reverse?
@@ -339,7 +392,8 @@ def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=3000,):
 #TODO i can def optimise this code
 def gen_demand_OD_counter(
     G,
-    gdf_residential,
+    residential_geoms,
+    residential_probs,
     gdf_destinations,
     rng,
     n_trips: int = 50,
@@ -347,8 +401,6 @@ def gen_demand_OD_counter(
     max_dist: float | None = None,
 ):
     od_counts = Counter()
-
-    residential_geoms, residential_probs = prepare_region_sampling(gdf_residential)
 
     poly_idxs = rng.choice(
         len(residential_geoms),
@@ -404,7 +456,8 @@ def gen_demand_OD_counter(
 #TODO seperate edge importance for cars and bikes? (i swear i had done this but idk)
 def gen_OD_trips(
     G,
-    gdf_residential,
+    residential_geoms,
+    residential_probs,
     gdf_destinations,
     rng,
     n_trips: int = 50,
@@ -432,7 +485,8 @@ def gen_OD_trips(
     # --- Demand ODs ---
     demand_counter = gen_demand_OD_counter(
         G,
-        gdf_residential,
+        residential_geoms,
+        residential_probs,
         gdf_destinations,
         rng,
         n_trips=n_trips,
@@ -464,7 +518,8 @@ def gen_OD_trips(
 def gen_od_trips_timeline(
     list_total_trips_per_hour: list[int],
     G,
-    gdf_residential,
+    residential_geoms,
+    residential_probs,
     gdf_destinations,
     rng,
     random_frac: float = 0.0,
@@ -496,7 +551,8 @@ def gen_od_trips_timeline(
 
         ods = gen_OD_trips(
             G,
-            gdf_residential,
+            residential_geoms,
+            residential_probs,
             gdf_destinations,
             rng,
             n_trips=n_trips,
