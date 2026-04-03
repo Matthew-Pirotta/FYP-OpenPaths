@@ -5,86 +5,144 @@ import matplotlib.pyplot as plt
 from Demand import ODGeneration, paths_util
 import constants
 
-def run_beta_sweep(G_drive, residential_geoms, residential_probs, gdf_destinations,
-                    real_od_normalized, rng, beta_range, list_total_trips_per_hour, n_trips=50_000, compute_lengths=False):
-
+def run_beta_sweep(
+    G_drive,
+    residential_geoms,
+    residential_probs,
+    gdf_destinations,
+    real_od_normalized,
+    rng,
+    beta_range,
+    list_total_trips_per_hour,
+    n_trips=50_000,
+    compute_lengths=False,
+):
     results = []
-    best_od_norm_matrix = None 
+    best_od_norm_matrix = None
     best_od_locality_matrix = None
-    best_od_locality_pairs= None
+    best_od_locality_pairs = None
     best_od_locality_timeline_tables = None
-    min_rmse = float('inf')
+    min_rmse = float("inf")
 
     for b in beta_range:
-        #TODO im not likeing the code duplication and redudnacy with having to generate aggregrate and wholes for both od_pairing and matrix
-        print(f"workong on beta {b}")
-        # 1. Generate OD with the specific beta
-        # Assuming your gen_OD_trips function accepts a beta parameter
-        od_timeline = ODGeneration.gen_od_trips_timeline(list_total_trips_per_hour, G_drive, residential_geoms, residential_probs, gdf_destinations, rng, beta=b)
-        od = ODGeneration.aggregate_timeline_ods(od_timeline)
-        
-        # 2. Build and Normalize Matrix
-        od_df = ODGeneration.build_region_od_table(G_drive, od, locality_to_region=constants.LOCALITY_TO_REGION)
-        od_matrix_norm = od_df.div(od_df.sum(axis=1), axis=0).fillna(0)
-        
-        # 3. Calculate RMSE
-        # Ensure indices match real_od_normalized
-        od_matrix_norm = od_matrix_norm.reindex(index=real_od_normalized.index, 
-                                columns=real_od_normalized.columns).fillna(0)
-        rmse = np.sqrt(((od_matrix_norm - real_od_normalized) ** 2).values.mean())
+        print(f"working on beta {b}")
 
-        # Save the matrix that produced this RMSE
+        od_timeline = ODGeneration.gen_od_trips_timeline(
+            list_total_trips_per_hour,
+            G_drive,
+            residential_geoms,
+            residential_probs,
+            gdf_destinations,
+            rng,
+            beta=b,
+        )
+        od = ODGeneration.aggregate_timeline_ods(od_timeline)
+
+        eval_result = evaluate_od_against_real(
+            G_drive,
+            od,
+            real_od_normalized,
+            locality_to_region=constants.LOCALITY_TO_REGION,
+            compute_lengths=compute_lengths,
+        )
+
+        rmse = eval_result["rmse"]
+
         if rmse < min_rmse:
             min_rmse = rmse
-            best_od_norm_matrix = od_matrix_norm.copy()
+            best_od_norm_matrix = eval_result["od_norm"].copy()
             best_od_locality_pairs = od
-            best_od_locality_timeline_tables = ODGeneration.build_region_od_tables_from_timeline(od_timeline, G_drive)
+            best_od_locality_timeline_tables = ODGeneration.build_region_od_tables_from_timeline(
+                od_timeline,
+                G_drive,
+            )
             best_od_locality_matrix = ODGeneration.build_region_od_table(G_drive, od)
-        
-        # 4. Path Lengths (Optional toggle)
-        avg_m = 0
-        if compute_lengths:
-            avg_m = paths_util.calculate_path_metrics(G_drive, od, "length")
-        
-        # Store results
+
         results.append({
             "beta": b,
             "rmse": rmse,
-            "avg_length": avg_m
+            "avg_length": eval_result["avg_length"],
         })
 
-    # Convert to DataFrame for easy analysis
     df_sweep = pd.DataFrame(results)
-    return df_sweep, best_od_norm_matrix, best_od_locality_matrix, best_od_locality_pairs, best_od_locality_timeline_tables,  min_rmse
-
-
-def calculate_random_baseline(G, gdf_residential, gdf_destinations, real_locality_od_normalized, rng, n_trips=50_000, compute_lengths=False):
-
-    # Create an equiprobable matrix of the same shape
-    n_regions = len(real_locality_od_normalized)
-    random_matrix = np.full((n_regions, n_regions), 1.0 / n_regions)
-
-    # Convert to DataFrame to match your real_od structure
-    random_df = pd.DataFrame(
-        random_matrix, 
-        index=real_locality_od_normalized.index, 
-        columns=real_locality_od_normalized.columns
+    return (
+        df_sweep,
+        best_od_norm_matrix,
+        best_od_locality_matrix,
+        best_od_locality_pairs,
+        best_od_locality_timeline_tables,
+        min_rmse,
     )
 
-    # Calculate Random RMSE
-    random_rmse = np.sqrt(((random_df - real_locality_od_normalized) ** 2).values.mean())
-    print(f"Random Baseline RMSE: {random_rmse:.4f}")
+def calculate_random_baseline(
+    G,
+    real_locality_od_normalized,
+    rng,
+    n_trips=50_000,
+    compute_lengths=False,
+    min_random_dist=3000,
+    locality_to_region=None,
+):
+    random_od_counts = ODGeneration.gen_random_OD_counter(
+        G,
+        rng,
+        n_trips=n_trips,
+        min_euclid_m=min_random_dist,
+    )
 
-    # Path Lengths (Optional toggle)
+    eval_result = evaluate_od_against_real(
+        G,
+        random_od_counts,
+        real_locality_od_normalized,
+        locality_to_region=locality_to_region,
+        compute_lengths=compute_lengths,
+    )
+
+    print(f"Random Baseline RMSE: {eval_result['rmse']:.4f}")
+    print(f"Average Random Distance in Malta: {(eval_result['avg_length'] / 1000):.2f} km")
+
+    return (
+        eval_result["rmse"],
+        eval_result["avg_length"],
+        eval_result["od_norm"],
+        random_od_counts,
+    )
+
+
+def evaluate_od_against_real(
+    G,
+    od_counts,
+    real_od_normalized,
+    *,
+    locality_to_region=None,
+    compute_lengths=False,
+):
+    od_df = ODGeneration.build_region_od_table(
+        G,
+        od_counts,
+        locality_to_region=locality_to_region,
+    )
+
+    od_norm = od_df.div(od_df.sum(axis=1), axis=0).fillna(0)
+
+    od_norm = od_norm.reindex(
+        index=real_od_normalized.index,
+        columns=real_od_normalized.columns,
+    ).fillna(0)
+
+    rmse = np.sqrt(((od_norm - real_od_normalized) ** 2).values.mean())
+
     avg_m = 0
     if compute_lengths:
-        # Generate Random Trips (beta=0)
-        random_region_od = ODGeneration.gen_OD_trips(
-            G, gdf_residential, gdf_destinations, rng, 
-            n_trips=n_trips, beta=0)
+        if isinstance(od_counts, dict):
+            od_for_paths = [(o, d, w) for (o, d), w in od_counts.items()]
+        else:
+            od_for_paths = od_counts
+        avg_m = paths_util.calculate_path_metrics(G, od_for_paths, "length")
 
-        avg_m = paths_util.calculate_path_metrics(G, random_region_od, "length")
-
-    print(f"Average Random Distance in Malta: {(avg_m/1000):.2f} km")
-
-    return random_rmse, avg_m
+    return {
+        "od_table": od_df,
+        "od_norm": od_norm,
+        "rmse": rmse,
+        "avg_length": avg_m,
+    }

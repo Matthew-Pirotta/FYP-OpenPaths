@@ -363,7 +363,7 @@ def build_total_region_od_table(
 #endregion
 
 #region gen_OD
-def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=3000,):
+def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=500,):
     nodes = np.array(list(G.nodes))
     xs = np.array([G.nodes[n]["x"] for n in nodes])
     ys = np.array([G.nodes[n]["y"] for n in nodes])

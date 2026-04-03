@@ -76,7 +76,7 @@ def plot_metrics(df):
     plt.show()
 
 
-def plot_od_investigation(df_sweep, random_rmse, avg_random_lengths_km, best_beta, best_len, best_rmse ):
+def plot_od_investigation(df_sweep, random_rmse, avg_random_lengths_km, best_beta, best_len, best_rmse, title ="" ):
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
     # --- Primary Y-Axis: RMSE ---
@@ -128,9 +128,10 @@ def plot_od_investigation(df_sweep, random_rmse, avg_random_lengths_km, best_bet
     plt.show()
 
 
-def plot_od_matrix_error(error):
+def plot_od_matrix_error(error, title=None):
     plt.figure(figsize=(6,5))
     sns.heatmap(error, annot=True, cmap="coolwarm", center=0)
-    plt.title("OD Matrix Error (Model - Observed)")
+    if title:
+        plt.title(title)
     plt.show()
 
