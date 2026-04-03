@@ -28,8 +28,7 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
         G_temp = copy.deepcopy(G_master)
 
         # Apply reallocations up to this iteration
-        for diff_data in diff_log[:it]:
-            edge = diff_data.get("edge")
+        for edge in diff_log[:it]:
 
             graph_util.reallocate_edge_dedicated(G_temp, edge)
 

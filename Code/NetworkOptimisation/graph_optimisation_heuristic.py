@@ -8,6 +8,7 @@ import pandas as pd
 import inspect
 from tqdm.notebook import tqdm
 from collections.abc import Callable
+from Demand import paths_util
 
 from . import heuristic, evaluation
 
@@ -27,7 +28,9 @@ def run_locality_task(args):
         G_protected = graph_util.make_protected_subgraph(G_master)
         G_drive = graph_util.make_drive_subgraph(G_master)
 
-        ev = evaluation.network_evaluation(G_protected, G_drive,OD_pairs=od, k_sample=k_sample,)
+        
+        #ev = evaluation.network_evaluation(G_protected, G_drive,OD_pairs=od, k_sample=k_sample,) TODO TEMP
+        ev = dict()
         ev["locality"] = name
         ev["iteration"] = iteration
         ev["diff_log"] = list(diff_log)  # store snapshot
@@ -39,6 +42,10 @@ def run_locality_task(args):
     # initial evaluation on the original state (before any reallocations)
     append_evaluation(G_working, iteration=0)
 
+    bike_paths = None
+    car_paths = None
+
+    beta = 1 #TODO TEMP
     for i in tqdm(range(1, n_iterations+1), desc=f"Iterations ({name})", unit="iter", leave = False):
         G_drive = graph_util.make_drive_subgraph(G_working)
         G_bikeable = graph_util.make_bikeable_subgraph(G_working)
@@ -49,7 +56,13 @@ def run_locality_task(args):
             print(f"🚫 No reallocatable edges left for {name}, stopping early at iteration {i}")
             break 
 
-        if "k_sample" in sig.parameters:
+        if "bike_paths" in sig.parameters and "car_paths" in sig.parameters:
+            if (i % EVALUATION_MOD == 0) or (bike_paths is None) or (car_paths is None):
+                bike_paths = paths_util.compute_candidate_paths( G_bikeable, od, path_weight_metric="bike_cost_penalty",)
+                car_paths = paths_util.compute_candidate_paths( G_drive, od, path_weight_metric="length",)
+
+            edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected, bike_paths, car_paths,  beta)
+        elif "k_sample" in sig.parameters:
             edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected, k_sample=k_sample)
         else:
             edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected)
@@ -58,9 +71,8 @@ def run_locality_task(args):
             print("No more valid edges left to reallocate")
             break
 
-        reallocated_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
-        for reallocated_edge in reallocated_edges:
-            diff_log.append({"edge":reallocated_edge})
+        created_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
+        diff_log.append({"edge": edge_to_reallocate, "created_edges": created_edges})
 
         if i % EVALUATION_MOD == 0:
             append_evaluation(G_working, iteration=i, clear_diff=True)
