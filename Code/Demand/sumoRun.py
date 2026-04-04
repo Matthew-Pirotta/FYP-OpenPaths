@@ -12,7 +12,9 @@ def build_network(sim_dir, simulation_name, verbose):
         "--osm-files", f"{simulation_name}.osm",
         "--output-file", f"{simulation_name}.net.xml",
         "--lefthand",
-        "--geometry.remove", # Simplify geometry, improves simulation speed
+        "--osm.all-attributes", "true",
+        "--osm.extra-attributes", "bike_cost_penalty",
+        "--plain-output-prefix", f"{simulation_name}_plain",
         "--ramps.guess",
         "--junctions.join",
         "--tls.guess-signals", #TODO get traffic signals from OSM
@@ -155,7 +157,8 @@ def run_sumo(sim_dir, verbose):
     ],cwd=sim_dir, capture_output=True, check=True, text=True)
 
 
-def run_simulation(simulation_name:str, car_scale:float, bike_scale:float, generate_net:bool, run_sim:bool, verbose:bool = False):
+def run_simulation(simulation_name:str, car_scale:float, bike_scale:float,
+                   should_build_network:bool,  force_taz_update:bool, should_gen_trips:bool, should_run_router:bool, should_execute_sim:bool, verbose:bool=False):
     # Path to the simulation folder relative to Code/
     sim_dir = os.path.join("..", "Simulations", simulation_name)
     sim_out_dir = os.path.join(sim_dir, "Output")
@@ -165,20 +168,20 @@ def run_simulation(simulation_name:str, car_scale:float, bike_scale:float, gener
     os.makedirs(sim_dir, exist_ok=True)
     os.makedirs(sim_out_dir, exist_ok=True)
     
-    if generate_net:
+    if should_build_network:
         build_network(sim_dir,simulation_name, verbose)
 
-    build_taz(sim_dir,simulation_name, verbose)
+    if force_taz_update:
+        build_taz(sim_dir,simulation_name, verbose)
 
-
-    generate_trips(sim_dir,simulation_name,car_scale, bike_scale, verbose)
+    if should_gen_trips:
+        generate_trips(sim_dir,simulation_name,car_scale, bike_scale, verbose)
     
+    if should_run_router:
+        run_router(sim_dir, simulation_name, "cars", verbose)
+        run_router(sim_dir, simulation_name, "bikes", verbose)
 
-    run_router(sim_dir, simulation_name, "cars", verbose)
-    run_router(sim_dir, simulation_name, "bikes", verbose)
-
-    if run_sim:
+    if should_execute_sim:
         run_sumo(sim_dir, verbose)
-
 
 
