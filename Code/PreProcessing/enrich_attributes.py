@@ -180,6 +180,11 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
             d["reallocatable"] = False
             counters["no_car_allowed"] += 1
         
+        #Cars can not enter exit roundabouts if there a dedicated cyclelane with a phyiscal barier
+        elif d.get("junction") == "roundabout":
+            d["reallocatable"] = False
+            counters["roundabouts"] += 1
+        
         #TODO can remove
         elif d.get("car_lanes", 0) <= 0:
             d["reallocatable"] = False
