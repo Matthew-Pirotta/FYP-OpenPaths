@@ -3,7 +3,7 @@ from networkx import MultiDiGraph
 import constants
 
 # region bike costs
-
+#TODO remove all references to speed
 def _compute_bike_costs_from_grade(
     length_m: float,
     grade: float,  # capped in [-0.2, 0.2]
@@ -65,7 +65,7 @@ def update_bike_costs(
     for u, v, k in edges:
         d = G[u][v][k]
         length_m = d["length"]
-        grade = d["grade"]
+        grade = d.get("grade", 1)#TODO TEMP THIS SHOULD NOT BE A GET but d[]
         risk_factor = d["risk_factor"]
 
         base, penalty = _compute_bike_costs_from_grade(

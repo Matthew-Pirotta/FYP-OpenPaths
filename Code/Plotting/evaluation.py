@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 def plot_metrics(df):
-    fig, axs = plt.subplots(3, 2, figsize=(12, 12))
+    fig, axs = plt.subplots(4, 2, figsize=(12, 12))
     x = df["iteration"] if "iteration" in df.columns else range(len(df))
 
     def plot_pair(ax, bike_col, car_col, title, transform=None):
@@ -70,6 +70,13 @@ def plot_metrics(df):
         bike_col="coverage_area_km2",
         car_col="car_coverage_area_km2",
         title="Coverage (km^2)",
+    )
+
+    plot_pair(
+        axs[3, 0],
+        bike_col="bike_od_total_cost",
+        car_col="car_od_total_cost",
+        title="od total cost by type",
     )
 
     fig.tight_layout()

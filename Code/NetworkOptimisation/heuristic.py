@@ -14,6 +14,122 @@ import nx_parallel
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
 
+# TODO NOTE (i.e write in writeup) routing model differs cars route on one graph with one cost function, bikes route on another graph with bike_cost_penalty, network connectivity and route concentration can differ a lot.
+# That means one mode can naturally produce more dispersed flows or more concentrated flows, So a bike importance value of 50 and a car importance value of 50 do not necessarily mean equal strategic importance.
+# Since the networks are of different sizes, it is only fair to normalise on the the candidate edges, as the importance can be difused/concentrated
+def normalize_edge_importance_on_candidates(
+    candidate_edges, 
+    edge_importance,
+):
+    """
+    Normalize a single importance dictionary over the current candidate set.
+
+    Parameters
+    ----------
+    candidate_edges : iterable of (u, v, k)
+        Edges currently eligible for reallocation.
+    edge_importance : dict[(u, v, k), float]
+        Raw edge importance values.
+
+    Returns
+    -------
+    dict[(u, v, k), float]
+        Importance normalized to [0, 1] over candidate_edges.
+    """
+    vals = {e: edge_importance.get(e, 0.0) for e in candidate_edges}
+    max_val = max(vals.values(), default=0.0)
+
+    if max_val <= 0.0:
+        return {e: 0.0 for e in candidate_edges}
+
+    return {e: vals[e] / max_val for e in candidate_edges}
+
+def build_balanced_edge_scores(
+    candidate_edges,
+    bike_edge_importance,
+    car_edge_importance,
+    gamma: float = 1.0,
+):
+    """
+    Build balanced candidate scores from normalized bike and car importance.
+
+    Score:
+        alpha * normalized_bike_importance
+      - beta  * normalized_car_importance
+
+    Parameters
+    ----------
+    candidate_edges : iterable of (u, v, k)
+    bike_edge_importance : dict[(u, v, k), float]
+    car_edge_importance : dict[(u, v, k), float]
+    alpha : float
+        Weight for bike importance.
+    beta : float
+        Weight for car importance penalty.
+
+    Returns
+    -------
+    dict[(u, v, k), float]
+        Combined score for each candidate edge.
+    """
+    bike_norm = normalize_edge_importance_on_candidates(
+        candidate_edges=candidate_edges,
+        edge_importance=bike_edge_importance,
+    )
+    car_norm = normalize_edge_importance_on_candidates(
+        candidate_edges=candidate_edges,
+        edge_importance=car_edge_importance,
+    )
+
+    scores = {}
+    for e in candidate_edges:
+        scores[e] = bike_norm[e] - gamma * car_norm[e]
+
+    return scores
+
+#TODO is this just flow?
+def heuristic_od_edge_betweenness(
+    G_working: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    G_protected: MultiDiGraph,
+    bike_paths,
+    car_paths,
+    beta: float = 1.0,
+):
+    """
+    Select the reallocatable edge with the best balanced score.
+
+    Notes
+    -----
+    - Bike importance is computed from shortest bike paths using bike_cost_penalty.
+    - Car importance is computed from shortest car paths using length.
+    - Importances are normalized only over currently reallocatable edges,
+      since the decision is made only among that feasible set.
+    """
+    reallocatable_edges = list(G_realloc.edges(keys=True))
+    if not reallocatable_edges:
+        return None
+
+    bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths,)
+    car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths,)
+
+    realloc_scores = build_balanced_edge_scores(
+        candidate_edges=reallocatable_edges,
+        bike_edge_importance=bike_edge_importance,
+        car_edge_importance=car_edge_importance,
+        gamma=beta,
+    )
+
+    if not realloc_scores:
+        return None
+
+    best_edge = max(realloc_scores, key=realloc_scores.get)
+    return best_edge
+
+
+#region topological heuristics
 def heuristic_edge_betweenness_centrality(
         G_master:MultiDiGraph,
         G_drive:MultiDiGraph,
@@ -41,26 +157,6 @@ def heuristic_edge_betweenness_centrality(
     print(max_between_cent_edge)    
     return max_between_cent_edge
 
-
-def heuristic_od_edge_betweenness(G_bikeable:MultiDiGraph, G_realloc:MultiDiGraph, OD, edge_importance):
-    reallocatable_edges = set(G_realloc.edges(keys=True))
-
-    paths = paths_util.compute_candidate_paths(
-        G_bikeable,
-        OD,
-        path_weight_metric="bike_cost_penalty",
-    )
-
-    edge_importance = paths_util.compute_edge_importance(G_bikeable, paths)
-
-    realloc_scores = {
-        e: edge_importance.get(e, 0.0)
-        for e in reallocatable_edges
-    }
-
-    best_edge = max(realloc_scores, key=realloc_scores.get)
-    return best_edge
-
 def heuristic_edge_closeness_centrality(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -86,6 +182,7 @@ def heuristic_edge_closeness_centrality(
     best_edge = max(edge_scores, key=edge_scores.get)
     print("Selected edge:", best_edge, "score:", edge_scores[best_edge])
     return best_edge
+#endregion
 
 def heuristic_random(G_master: MultiDiGraph, G_drive: MultiDiGraph, G_bikeable: MultiDiGraph, G_realloc: MultiDiGraph, G_protected:MultiDiGraph,) -> tuple:
     #TODO set seed?
@@ -94,6 +191,7 @@ def heuristic_random(G_master: MultiDiGraph, G_drive: MultiDiGraph, G_bikeable: 
     random_edge = random.choice(edges)
     return random_edge
 
+#region Component Heuristics
 def _find_bridge_path(G_drive:MultiDiGraph, comp_a:set, comp_b:set) -> tuple[list,float]:
     best_path, best_cost = None, float("inf")
     for a in comp_a:
@@ -169,7 +267,6 @@ def heuristic_L2S(
     #NOTE it is done through G_drive, as the bike network may be disconnected
     edge_to_reallocate = _connect_components(G_drive, comps[0], comps[1], "L2S") 
     return edge_to_reallocate
-
 
 def heuristic_L2C(
         G_master:MultiDiGraph,
@@ -252,3 +349,4 @@ def _calc_network_centroid(G:MultiDiGraph, nodes:set)-> np.ndarray:
     coords = np.array([[G.nodes[n]["x"], G.nodes[n]["y"]] for n in nodes])
     centroid = coords.mean(axis=0)
     return centroid
+#endregion
