@@ -67,9 +67,8 @@ def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
 
     G_test = copy.deepcopy(G_drive)
     G_test.remove_edge(u, v, k)
-    stays_connected = nx.is_strongly_connected(G_test)
+    stays_connected = nx.is_weakly_connected(G_test)
 
-    # Choose strong or weak connectivity depending on road model
     return stays_connected
 
 
@@ -115,42 +114,50 @@ def _has_dedicated_bike_edge(G, u, v):
             return True
     return False
 
-#TODO this is all useless idk
 def reallocate_edge_dedicated(G: MultiDiGraph, edge_id: tuple,) -> list[tuple]:
     """
-    Create dedicated bike edges instead of modifying existing ones. Changes are made inplace
+    Create dedicated bike edges instead of modifying existing ones. Changes are made inplace.
     """
     u, v, k = edge_id
     d = G[u][v][k]
+    reallocated: list[tuple] = []
 
-    reallocated = []
-
-    d["car_lanes"] = max(0, d.get("car_lanes", 1) - 1)
-
-    # Prevent repeated reallocations
+    car_lanes = d.get("car_lanes", 1) - 1
+    d["car_lanes"] = max(0, car_lanes)
+    if d["car_lanes"] == 0:
+        d["car_allowed"] = False
     d["reallocatable"] = False
 
-    # --- 2. Create forward bike edge if missing ---
+    reverse_edges = G.get_edge_data(v, u)
+    reverse_template = None
+    if reverse_edges:
+        reverse_template = reverse_edges.get(k)
+        if reverse_template is None:
+            for edge_data in reverse_edges.values():
+                if edge_data.get("highway") != "cycleway":
+                    reverse_template = edge_data
+                    break
+            if reverse_template is None:
+                reverse_template = next(iter(reverse_edges.values()))
+        reverse_template["reallocatable"] = False
+
     if not _has_dedicated_bike_edge(G, u, v):
         new_edge = _create_bike_edge(G, u, v, d)
         reallocated.append(new_edge)
 
-    # --- 3. Handle reverse direction ---
     if not _has_dedicated_bike_edge(G, v, u):
-        # use reverse edge as template
-        d_rev = copy.deepcopy(d)
-        d_rev["grade"] = -d_rev.get("grade",0)
-        d_rev["geometry"] = LineString(d_rev.get("geometry").coords[::-1])
+        if reverse_template is None:
+            d_rev = dict(d)
+            if "grade" in d_rev:
+                d_rev["grade"] = -d_rev["grade"]
+            geometry = d_rev.get("geometry")
+            if geometry is not None and hasattr(geometry, "coords"):
+                d_rev["geometry"] = LineString(geometry.coords[::-1])
+        else:
+            d_rev = reverse_template
 
         new_edge_rev = _create_bike_edge(G, v, u, d_rev)
         reallocated.append(new_edge_rev)
-
-        # also lock original reverse edge
-        d_rev["reallocatable"] = False
-
-    # --- 4. Recompute costs only for new bike edges ---
-    #TODO
-    #enrich_attributes.update_bike_costs(G, reallocated)
 
     return reallocated
 

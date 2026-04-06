@@ -163,8 +163,7 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
     """
     counters = Counter()
     # mark bridges as not reallocatable
-    #bridges = set(nx.bridges(G.to_undirected()))
-    bridges = {}
+    bridges = set(nx.bridges(G.to_undirected()))
     for u, v, k, d in G.edges(keys=True, data=True):
         # default to False until proven otherwise (defensive)
         if (u, v) in bridges or (v, u) in bridges:
@@ -184,6 +183,11 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
         elif d.get("junction") == "roundabout":
             d["reallocatable"] = False
             counters["roundabouts"] += 1
+
+        #Dont touch busy roads, too imp for cars and not plesant to cycle along even seperated
+        elif d.get("highway") in {"trunk", "primary"}:
+            d["reallocatable"] = False
+            counters["highway type"] += 1
         
         #TODO can remove
         elif d.get("car_lanes", 0) <= 0:

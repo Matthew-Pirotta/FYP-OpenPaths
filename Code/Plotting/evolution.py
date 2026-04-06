@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import graph_util
 
-from Plotting.renderer import draw_graph
+from Plotting import renderer
+from Plotting.renderer import PlotSettings
+
 from constants import SafetyClass
 
 #TODO remove diff_type
@@ -51,7 +53,7 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
             for _, _, d in G_temp.edges(data=True)
         ]
 
-        _, ax = draw_graph(
+        _, ax = renderer.draw_graph(
             G_temp,
             ax=ax,
             node_size=0,
@@ -85,13 +87,15 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
     plt.show()
 
 
-def plot_network_evolution(G_master, diff_log):
+def plot_network_evolution(G_master, diff_log, **kwargs:PlotSettings):
     """Plot incremental reallocations over time, colored by iteration."""
+    
+    # Merge defaults with overrides
+    settings = renderer.DEFAULTS | kwargs
 
-    fig, ax = draw_graph(
+    fig, ax = renderer.draw_graph(
         G_master,
-        node_size=0,
-        edge_linewidth=0.3,
+        **settings
     )
 
     cmap = plt.cm.plasma
@@ -128,3 +132,5 @@ def plot_network_evolution(G_master, diff_log):
 
     fig.tight_layout()
     plt.show()
+
+    return fig,ax

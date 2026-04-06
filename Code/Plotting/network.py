@@ -63,7 +63,7 @@ def plot_categorical_attr(
     return fig,ax
 
 
-def plot_boolean_attribute(G, attribute):
+def plot_boolean_attribute(G, attribute, **kwargs: Unpack[PlotSettings]):
     color_map = {True: "green", False: "red"}
 
     edge_colors = [
@@ -79,6 +79,7 @@ def plot_boolean_attribute(G, attribute):
         G,
         edge_color=edge_colors,
         edge_linewidth=edge_widths,
+        **kwargs,
     )
 
     legend = [

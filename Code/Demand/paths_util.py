@@ -19,7 +19,7 @@ def total_cost_from_paths(G, paths, weight_attr):
 
 #TODO these generated paths do not provide the K key, there are two solutions
 #1. k = min(edges, key=lambda x: edges[x].get(weight_attr, float('inf')))
-#2. convert to digraph, extra benefit of being able to use cupgraph
+#2. convert to digraph, extra benefit of being able to use cupgraph, nvm that wont really work
 def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current", "bike_cost_penalty"]):
     """
     Compute a single shortest (bike-optimal) path for each OD pair.
@@ -42,7 +42,7 @@ def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current"
         try:
             path = nx.shortest_path(G, o, d, weight=path_weight_metric)
             paths[(o, d, w)] = path
-        except nx.NetworkXNoPath:
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
 
     return paths

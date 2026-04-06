@@ -29,8 +29,7 @@ def run_locality_task(args):
         G_drive = graph_util.make_drive_subgraph(G_master)
 
         
-        #ev = evaluation.network_evaluation(G_protected, G_drive,OD_pairs=od, k_sample=k_sample,) TODO TEMP
-        ev = dict()
+        ev = evaluation.network_evaluation(G_protected, G_drive,OD_pairs=od, k_sample=k_sample,)
         ev["locality"] = name
         ev["iteration"] = iteration
         ev["diff_log"] = list(diff_log)  # store snapshot
@@ -59,6 +58,7 @@ def run_locality_task(args):
         if "bike_paths" in sig.parameters and "car_paths" in sig.parameters:
             if (i % EVALUATION_MOD == 0) or (bike_paths is None) or (car_paths is None):
                 bike_paths = paths_util.compute_candidate_paths( G_bikeable, od, path_weight_metric="bike_cost_penalty",)
+                # TODO NOTE that although all trips where originally created on the car graph, since car edges can be reallocated, there can be the case that a starting edge might not be valid 
                 car_paths = paths_util.compute_candidate_paths( G_drive, od, path_weight_metric="length",)
 
             edge_to_reallocate = heuristic_func(G_working, G_drive, G_bikeable, G_realloc,G_protected, bike_paths, car_paths,  beta)
@@ -71,8 +71,16 @@ def run_locality_task(args):
             print("No more valid edges left to reallocate")
             break
 
-        created_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
-        diff_log.append({"edge": edge_to_reallocate, "created_edges": created_edges})
+        reallocatable = graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate)
+        if reallocatable:
+            created_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
+            diff_log.append({"edge": edge_to_reallocate, "created_edges": created_edges})
+        else:
+            u, v, k = edge_to_reallocate
+            d = G_working[u][v][k]
+            d["reallocateable"] = False
+            print(f"edge {edge_to_reallocate} is not reallocatable")
+            #diff_log.append() #TODO idk
 
         if i % EVALUATION_MOD == 0:
             append_evaluation(G_working, iteration=i, clear_diff=True)
