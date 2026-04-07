@@ -7,14 +7,12 @@ import constants
 
 def run_beta_sweep(
     G_drive,
-    residential_geoms,
-    residential_probs,
+    residential_sampling,
     gdf_destinations,
     real_od_normalized,
     rng,
     beta_range,
     list_total_trips_per_hour,
-    n_trips=50_000,
     compute_lengths=False,
 ):
     results = []
@@ -30,8 +28,7 @@ def run_beta_sweep(
         od_timeline = ODGeneration.gen_od_trips_timeline(
             list_total_trips_per_hour,
             G_drive,
-            residential_geoms,
-            residential_probs,
+            residential_sampling,
             gdf_destinations,
             rng,
             beta=b,

@@ -10,6 +10,7 @@ from constants import OD, ODPair
 from typing import Any, Optional
 import networkx as nx
 import constants
+from Demand import ODUtil
 
 
 
@@ -33,9 +34,12 @@ def sample_point_in_polygon(polygon, rng, max_tries=100):
     raise RuntimeError("Failed to sample point inside polygon")
 
 def prepare_population_sampling_from_joined_residential(gdf_residential_joined):
-    geoms = list(gdf_residential_joined.geometry)
-    probs = gdf_residential_joined["prob"].to_numpy(dtype=float)
-    return geoms, probs
+    return {
+        "geoms": list(gdf_residential_joined.geometry),
+        "probs": gdf_residential_joined["prob"].to_numpy(dtype=float),
+        "localities": gdf_residential_joined["locality"].tolist(),
+        "regions": gdf_residential_joined["locality"].map(constants.LOCALITY_TO_REGION).tolist(),
+    }
 
 
 def prepare_residential(gdf_residential):
@@ -128,7 +132,7 @@ def infer_destination_type(row):
 
     # --- Amenity → mapped ---
     if pd.notna(amenity):
-        if amenity in constants.AMENITY_KEEP:
+        if amenity in ODUtil.AMENITY_KEEP:
             return amenity
         else:
             return "other"
@@ -269,8 +273,8 @@ def build_region_od_table(
 
     if locality_to_region is not None:
         od_table = od_table.reindex(
-            index=constants.REGION_ORDER,
-            columns=constants.REGION_ORDER,
+            index=ODUtil.REGION_ORDER,
+            columns=ODUtil.REGION_ORDER,
             fill_value=0,
         )
     else:
@@ -389,11 +393,9 @@ def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=500,):
 
     return c
 
-#TODO i can def optimise this code
 def gen_demand_OD_counter(
     G,
-    residential_geoms,
-    residential_probs,
+    residential_sampling,
     gdf_destinations,
     rng,
     n_trips: int = 50,
@@ -401,6 +403,9 @@ def gen_demand_OD_counter(
     max_dist: float | None = None,
 ):
     od_counts = Counter()
+    residential_geoms = residential_sampling["geoms"]
+    residential_probs = residential_sampling["probs"]
+    residential_regions = residential_sampling["regions"]
 
     poly_idxs = rng.choice(
         len(residential_geoms),
@@ -408,27 +413,34 @@ def gen_demand_OD_counter(
         p=residential_probs
     )
 
-    origin_pts = [sample_point_in_polygon(residential_geoms[i], rng) for i in poly_idxs]
-
+    origin_pts = []
     dest_pts = []
+    for i in poly_idxs:
+        origin_pt = sample_point_in_polygon(residential_geoms[i], rng)
+        origin_region = residential_regions[i]
 
-    for origin_pt in origin_pts:
-        purpose = sample_trip_purpose(rng, constants.PURPOSE_SHARES)
+        purpose_shares = ODUtil.PURPOSE_SHARES_BY_REGION.get(origin_region)
+        if purpose_shares is None:
+            raise ValueError(f"Missing purpose shares for region={origin_region}")
+
+        purpose = sample_trip_purpose(rng, purpose_shares)
 
         dest_pt = sample_destination_for_purpose(
             origin=origin_pt,
             destinations=gdf_destinations,
             purpose=purpose,
             rng=rng,
-            purpose_to_subtypes=constants.PURPOSE_TO_TYPES,
+            purpose_to_subtypes=ODUtil.PURPOSE_TO_TYPES,
             beta=beta,
             max_dist=max_dist,
         )
-        dest_pts.append(dest_pt)
 
+        origin_pts.append(origin_pt)
+        dest_pts.append(dest_pt)
 
     if not dest_pts:
         return od_counts
+
 
     origin_nodes = ox.distance.nearest_nodes(
         G,
@@ -456,8 +468,7 @@ def gen_demand_OD_counter(
 #TODO seperate edge importance for cars and bikes? (i swear i had done this but idk)
 def gen_OD_trips(
     G,
-    residential_geoms,
-    residential_probs,
+    residential_sampling,
     gdf_destinations,
     rng,
     n_trips: int = 50,
@@ -485,8 +496,7 @@ def gen_OD_trips(
     # --- Demand ODs ---
     demand_counter = gen_demand_OD_counter(
         G,
-        residential_geoms,
-        residential_probs,
+        residential_sampling,
         gdf_destinations,
         rng,
         n_trips=n_trips,
@@ -518,8 +528,7 @@ def gen_OD_trips(
 def gen_od_trips_timeline(
     list_total_trips_per_hour: list[int],
     G,
-    residential_geoms,
-    residential_probs,
+    residential_sampling,
     gdf_destinations,
     rng,
     random_frac: float = 0.0,
@@ -551,8 +560,7 @@ def gen_od_trips_timeline(
 
         ods = gen_OD_trips(
             G,
-            residential_geoms,
-            residential_probs,
+            residential_sampling,
             gdf_destinations,
             rng,
             n_trips=n_trips,
