@@ -230,3 +230,121 @@ def plot_OD_lines(
     plt.show()
 
     return gdf_od
+
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+
+from Plotting.utils import assign_adjacent_colors
+from Plotting.renderer import draw_graph
+
+
+def plot_population_heatmap_with_regions_and_roads(
+    gdf_residential,
+    gdf_localities,
+    G=None,
+    *,
+    value_col="raw_weight",
+    use_density=False,
+    show_region_fill=True,
+    show_region_boundaries=True,
+    show_region_names=True,
+    show_roads=True,
+    cmap="OrRd",
+    figsize=(12, 12),
+    title=None,
+    use_log=True,
+    road_edge_color="black",
+    road_edge_linewidth=0.4,
+    road_alpha=0.5,
+):
+    res = gdf_residential.copy()
+    loc = gdf_localities.copy()
+
+    if res.crs != loc.crs:
+        loc = loc.to_crs(res.crs)
+
+    if use_density:
+        plot_col = f"{value_col}_density"
+        res[plot_col] = res[value_col] / res.geometry.area
+    else:
+        plot_col = value_col
+
+    loc_colored = assign_adjacent_colors(loc)
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # 1) faint locality fill underneath
+    if show_region_fill:
+        loc_colored.plot(
+            ax=ax,
+            color=loc_colored["color"],
+            edgecolor="none",
+            alpha=0.15,
+            zorder=1,
+        )
+
+    # 2) residential heatmap
+    vals = res[plot_col].replace(0, float("nan")).dropna()
+    norm = None
+    if use_log and len(vals) > 0 and (vals > 0).all():
+        norm = LogNorm(vmin=vals.min(), vmax=vals.max())
+
+    res.plot(
+        column=plot_col,
+        ax=ax,
+        cmap=cmap,
+        edgecolor="none",
+        linewidth=0.1,
+        alpha=0.85,
+        legend=True,
+        norm=norm,
+        legend_kwds={"label": plot_col, "shrink": 0.7},
+        zorder=2,
+    )
+
+    # 3) locality boundaries
+    if show_region_boundaries:
+        loc_colored.boundary.plot(
+            ax=ax,
+            color="black",
+            linewidth=0.6,
+            alpha=0.7,
+            zorder=3,
+        )
+
+    # 4) road edges
+    if show_roads and G is not None:
+        fig, ax = draw_graph(
+            G,
+            ax=ax,
+            node_size=0,
+            edge_color=road_edge_color,
+            edge_linewidth=road_edge_linewidth,
+        )
+
+        # if draw_graph does not expose alpha, this is still fine;
+        # otherwise pass alpha=road_alpha there if supported
+
+    # 5) region names
+    if show_region_names and "name" in loc_colored.columns:
+        for _, row in loc_colored.iterrows():
+            pt = row.geometry.representative_point()
+            ax.text(
+                pt.x,
+                pt.y,
+                row["name"],
+                fontsize=7,
+                ha="center",
+                va="center",
+                color="black",
+                bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1),
+                zorder=5,
+            )
+
+    ax.set_title(title or f"Population heatmap: {plot_col}")
+    ax.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    return fig, ax

@@ -19,9 +19,9 @@ def plot_snapshots(G_master, diff_log, num_snapshots=4, show_classification=True
     safety_to_color_map = {
         SafetyClass.PROTECTED: "magenta",
         SafetyClass.PAINTED: "green",
-        SafetyClass.LOW_TRAFFIC: "orange",
+        SafetyClass.LOW_CAR_FLOW: "orange",
         SafetyClass.CAUTION: "red",
-        SafetyClass.HIGH_TRAFFIC: "darkred",
+        SafetyClass.HIGH_CAR_FLOW: "darkred",
         SafetyClass.UNCLASSIFIED: "gray",
     }
 

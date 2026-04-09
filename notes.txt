@@ -165,3 +165,7 @@ https://sumo.dlr.de/docs/Definition_of_Vehicles%2C_Vehicle_Types%2C_and_Routes.h
 https://sumo.dlr.de/docs/Tools/Trip.html
 https://sumo.dlr.de/docs/Simulation/Output/Summary.html
 https://sumo.dlr.de/docs/Tools/Visualization.html
+
+----
+
+Many cycling lanes arent properally tagged, for example on the coast road is is actually just a lane in the road. But it is tagged highway:cycleway, but is missing cycleway:lane. Conversely the road from rabat to H'attard, is technically seperated and thus needs the cycleway:track.

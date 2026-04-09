@@ -26,8 +26,9 @@ def _compute_progress_metrics(ev: dict, state: StopState) -> tuple[dict, StopSta
     Add baseline-relative progress metrics to a raw evaluation dict.
     Returns the enriched evaluation and updated stop state.
     """
-    bike_cost = ev["bike_od_total_cost"]
-    car_cost = ev["car_od_total_cost"]
+    print(ev)
+    bike_cost = ev["od_total_car_cost"]
+    car_cost = ev["od_total_bike_cost"]
 
     # First evaluation initializes baselines
     if state.baseline_bike_cost is None:
@@ -85,25 +86,17 @@ def _should_stop(ev: dict, state: StopState) -> tuple[bool, str | None]:
 
     return False, None
 
-def _evaluate_current_state(
-    G_master: MultiDiGraph,
-    *,
-    name: str,
-    iteration: int,
-    od,
-    k_sample,
-    diff_log: list,
-    state: StopState,
-    clear_diff: bool = False,
-) -> tuple[dict, StopState]:
+def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od,k_sample,diff_log: list,state: StopState,clear_diff: bool = False,) -> tuple[dict, StopState]:
     """
     Build one evaluation snapshot for the current graph state.
     """
     G_protected = graph_util.make_protected_subgraph(G_master)
     G_drive = graph_util.make_drive_subgraph(G_master)
+    G_bike = graph_util.make_bikeable_subgraph(G_master)
 
     ev = evaluation.network_evaluation(
         G_protected,
+        G_bike,
         G_drive,
         OD_pairs=od,
         k_sample=k_sample,

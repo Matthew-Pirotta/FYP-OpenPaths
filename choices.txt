@@ -141,3 +141,5 @@ Final choice:
 - directness od weighted, shortest_trip_bike/shortest_trip_car for each od partitioned
 - OD-weighted total bike.
 - node_close_cent will leave as pure topological
+----
+speed was not used in custom edge weighting

@@ -5,9 +5,9 @@ from typing import NamedTuple
 class SafetyClass(StrEnum):
     PROTECTED = "very_safe"
     PAINTED = "safe"
-    LOW_TRAFFIC = "moderate"
+    LOW_CAR_FLOW = "moderate"
     CAUTION = "caution"
-    HIGH_TRAFFIC = "dangerous"
+    HIGH_CAR_FLOW = "dangerous"
     UNSUITABLE = "unsuitable"
     UNCLASSIFIED = "unclassified"
 
@@ -21,8 +21,8 @@ class InfraType(StrEnum):
 SAFETY_COLORS = {
         SafetyClass.PROTECTED: "magenta",
         SafetyClass.PAINTED: "green",
-        SafetyClass.LOW_TRAFFIC: "orange",
-        SafetyClass.HIGH_TRAFFIC: "darkred",
+        SafetyClass.LOW_CAR_FLOW: "orange",
+        SafetyClass.HIGH_CAR_FLOW: "darkred",
     }
 
 HWY_COLORS = {

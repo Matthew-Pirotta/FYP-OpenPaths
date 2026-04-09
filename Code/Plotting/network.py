@@ -56,7 +56,7 @@ def plot_categorical_attr(
     if title:
         ax.set_title(title)
         
-    ax.axis("off")
+    ax.axis("on")
     fig.tight_layout()
     plt.show()
 

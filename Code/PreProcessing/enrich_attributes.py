@@ -14,8 +14,8 @@ from shapely.geometry import Point
 safety_to_risk_factor_map = {
     SafetyClass.PROTECTED: 0.5, 
     SafetyClass.PAINTED: 1,
-    SafetyClass.LOW_TRAFFIC: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
-    SafetyClass.HIGH_TRAFFIC: 4,#TODO highway twice as costly ig?
+    SafetyClass.LOW_CAR_FLOW: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
+    SafetyClass.HIGH_CAR_FLOW: 4,#TODO highway twice as costly ig?
     SafetyClass.UNCLASSIFIED:2,
 }
 
@@ -56,13 +56,13 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         elif infra_type == "mixed":
             # Potentially a good fietsstraat candidate
             if highway in {"residential",}:
-                classification = SafetyClass.LOW_TRAFFIC
+                classification = SafetyClass.LOW_CAR_FLOW
 
         elif highway in {"primary", "secondary", "trunk", "tertiary"}:
-            classification = SafetyClass.HIGH_TRAFFIC
+            classification = SafetyClass.HIGH_CAR_FLOW
 
         elif highway in {"track", "service", "non_motorised"}:
-            classification = SafetyClass.LOW_TRAFFIC
+            classification = SafetyClass.LOW_CAR_FLOW
 
         else:
             classification = SafetyClass.UNCLASSIFIED
@@ -74,7 +74,7 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         data["risk_factor"] = float(safety_to_risk_factor_map[classification])
 
         # Dangerous roads should not be bikeable
-        if classification == SafetyClass.HIGH_TRAFFIC:
+        if classification == SafetyClass.HIGH_CAR_FLOW:
             #TODO NOTE this was set to false orginally, but was causing proble,s
             #I have now set it true, and made the bikeable subgraph reachable to all nodes
             data["bike_allowed"] = True
