@@ -348,3 +348,92 @@ def plot_population_heatmap_with_regions_and_roads(
     plt.show()
 
     return fig, ax
+
+
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from matplotlib.colors import LogNorm
+
+from Plotting.utils import assign_adjacent_colors
+from Plotting.renderer import draw_graph
+
+
+def plot_locality_population(
+    gdf_localities,
+    locality_to_population,
+    G=None,
+    *,
+    locality_name_col="name",
+    cmap="OrRd",
+    figsize=(12, 12),
+    title="Locality population",
+    use_log=True,
+    show_region_boundaries=True,
+    show_region_names=True,
+    show_roads=True,
+    road_edge_color="black",
+    road_edge_linewidth=0.4,
+):
+    loc = gdf_localities.copy()
+
+    # attach locality population
+    loc["population"] = loc[locality_name_col].map(locality_to_population)
+
+    missing = loc[loc["population"].isna()]
+    if len(missing) > 0:
+        print("Warning: missing population for localities:")
+        print(sorted(missing[locality_name_col].dropna().unique().tolist()))
+
+    loc = loc[loc["population"].notna()].copy()
+
+    vals = loc["population"].replace(0, float("nan")).dropna()
+    norm = None
+    if use_log and len(vals) > 0 and (vals > 0).all():
+        norm = LogNorm(vmin=vals.min(), vmax=vals.max())
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # locality polygons colored by full locality population
+    loc.plot(
+        column="population",
+        ax=ax,
+        cmap=cmap,
+        edgecolor="black" if show_region_boundaries else "none",
+        linewidth=0.6 if show_region_boundaries else 0,
+        alpha=0.9,
+        legend=True,
+        norm=norm,
+        legend_kwds={"label": "Population", "shrink": 0.7},
+        zorder=2,
+    )
+
+    if show_roads and G is not None:
+        fig, ax = draw_graph(
+            G,
+            ax=ax,
+            node_size=0,
+            edge_color=road_edge_color,
+            edge_linewidth=road_edge_linewidth,
+        )
+
+    if show_region_names:
+        for _, row in loc.iterrows():
+            pt = row.geometry.representative_point()
+            ax.text(
+                pt.x,
+                pt.y,
+                row[locality_name_col],
+                fontsize=7,
+                ha="center",
+                va="center",
+                color="black",
+                bbox=dict(facecolor="white", alpha=0.65, edgecolor="none", pad=1),
+                zorder=5,
+            )
+
+    ax.set_title(title)
+    ax.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+    return fig, ax, loc
