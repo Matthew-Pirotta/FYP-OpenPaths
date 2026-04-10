@@ -27,8 +27,8 @@ def _compute_progress_metrics(ev: dict, state: StopState) -> tuple[dict, StopSta
     Returns the enriched evaluation and updated stop state.
     """
     print(ev)
-    bike_cost = ev["od_total_car_cost"]
-    car_cost = ev["od_total_bike_cost"]
+    bike_cost = ev["full_od_total_bike_cost"]
+    car_cost = ev["car_od_total_car_cost"]
 
     # First evaluation initializes baselines
     if state.baseline_bike_cost is None:
@@ -151,7 +151,7 @@ def run_locality_task(args):
     G_working = copy.deepcopy(G_sub)
 
     evaluations = []
-    diff_log = []
+    event_log = []
     sig = inspect.signature(heuristic_func)
 
     state = StopState()
@@ -167,7 +167,7 @@ def run_locality_task(args):
         iteration=0,
         od=od,
         k_sample=k_sample,
-        diff_log=diff_log,
+        diff_log=event_log,
         state=state,
         clear_diff=False,
     )
@@ -220,13 +220,21 @@ def run_locality_task(args):
 
         if graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate):
             created_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
-            diff_log.append({
+            event_log.append({
+                "iteration": i,
+                "event_type": "reallocated",
                 "edge": edge_to_reallocate,
                 "created_edges": created_edges,
             })
         else:
             u, v, k = edge_to_reallocate
-            G_working[u][v][k]["reallocateable"] = False
+            G_working[u][v][k]["reallocatable"] = False
+            event_log.append({
+                "iteration": i,
+                "event_type": "marked_not_reallocatable",
+                "edge": edge_to_reallocate,
+                "created_edges": None,
+            })
             print(f"edge {edge_to_reallocate} is not reallocatable")
 
         if i % EVALUATION_MOD == 0:
@@ -236,7 +244,7 @@ def run_locality_task(args):
                 iteration=i,
                 od=od,
                 k_sample=k_sample,
-                diff_log=diff_log,
+                diff_log=event_log,
                 state=state,
                 clear_diff=True,
             )
@@ -258,7 +266,7 @@ def run_locality_task(args):
             iteration=last_iteration,
             od=od,
             k_sample=k_sample,
-            diff_log=diff_log,
+            diff_log=event_log,
             state=state,
             clear_diff=False,
         )

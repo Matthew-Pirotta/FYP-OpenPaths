@@ -31,14 +31,14 @@ def plot_metrics(df):
 
     plot_pair(
         axs[0, 0],
-        bike_col="num_components",
+        bike_col="protected_num_components",
         car_col="car_num_components",
         title="Network Fragmentation",
     )
 
     plot_pair(
         axs[0, 1],
-        bike_col="lcc_length",
+        bike_col="protected_lcc_length",
         car_col="car_lcc_length",
         title="Largest Connected Component (km)",
         transform=lambda s: s / 1000,
@@ -53,30 +53,37 @@ def plot_metrics(df):
 
     plot_pair(
         axs[1, 1],
-        bike_col="mean_node_closeness",
+        bike_col="protected_mean_node_closeness",
         car_col="car_mean_node_closeness",
         title="Node Closeness",
     )
 
     plot_pair(
         axs[2, 0],
-        bike_col="mean_directness",
+        bike_col="full_od_directness_mean",
         car_col="car_mean_directness",
         title="Directness",
     )
 
     plot_pair(
         axs[2, 1],
-        bike_col="coverage_area_km2",
+        bike_col="protected_coverage_area_km2",
         car_col="car_coverage_area_km2",
         title="Coverage (km^2)",
     )
 
     plot_pair(
         axs[3, 0],
-        bike_col="bike_od_total_cost",
-        car_col="car_od_total_cost",
+        bike_col="full_od_total_bike_cost",
+        car_col="car_od_total_car_cost",
         title="od total cost by type",
+    )
+
+    plot_pair(
+        axs[3, 1],
+        bike_col="bike_gain_vs_baseline",
+        car_col="car_harm_vs_baseline",
+        title="vs baseline",
     )
 
     fig.tight_layout()
