@@ -10,361 +10,8 @@ from constants import OD, ODPair
 from typing import Any, Optional
 import networkx as nx
 import constants
-from Demand import ODUtil
 
-
-
-DEFAULT_BETA = 0.0002
-
-#region sampling Origin
-def sample_point_in_polygon(polygon, rng, max_tries=100):
-    """
-    Uniformly sample a point inside a (Multi)Polygon using rejection sampling.
-    """
-    minx, miny, maxx, maxy = polygon.bounds
-
-    for _ in range(max_tries):
-        p = Point(
-            rng.uniform(minx, maxx),
-            rng.uniform(miny, maxy),
-        )
-        if polygon.contains(p):
-            return p
-
-    raise RuntimeError("Failed to sample point inside polygon")
-
-def prepare_population_sampling_from_joined_residential(gdf_residential_joined):
-    return {
-        "geoms": list(gdf_residential_joined.geometry),
-        "probs": gdf_residential_joined["prob"].to_numpy(dtype=float),
-        "localities": gdf_residential_joined["locality"].tolist(),
-        "regions": gdf_residential_joined["locality"].map(constants.LOCALITY_TO_REGION).tolist(),
-    }
-
-
-def prepare_residential(gdf_residential):
-    """
-    Keep valid residential polygons and only required columns.
-    """
-    gdf = gdf_residential.copy()
-
-    gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty].copy()
-    gdf = gdf[["geometry"]].copy()
-
-    # explode multipolygons into separate polygons if needed
-    gdf = gdf.explode(index_parts=False).reset_index(drop=True)
-
-    # keep only polygonal geometries
-    gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
-
-    return gdf
-
-def attach_locality_and_population_to_residential( gdf_residential, gdf_localities, locality_to_population,):
-    res = gdf_residential.copy().reset_index(drop=True)
-    res["res_id"] = res.index
-
-    loc = gdf_localities[["name", "geometry"]].copy()
-
-    if res.crs != loc.crs:
-        loc = loc.to_crs(res.crs)
-
-    joined = gpd.sjoin( res, loc, how="inner", predicate="intersects",).copy()
-
-    joined = joined.rename(columns={"name": "locality"})
-
-    # if a residential polygon intersects multiple localities because of boundary issues,
-    # keep the first match
-    joined = joined.drop_duplicates(subset=["res_id"]).reset_index(drop=True)
-
-    joined["population"] = joined["locality"].map(locality_to_population)
-
-    missing = joined[joined["population"].isna()]
-    if len(missing) > 0:
-        print("Warning: residential polygons with missing population localities:")
-        print(sorted(missing["locality"].dropna().unique().tolist()))
-
-    joined = joined[joined["population"].notna()].copy()
-
-    joined["res_area"] = joined.geometry.area
-    joined["locality_res_area_total"] = joined.groupby("locality")["res_area"].transform("sum")
-
-    joined["raw_weight"] = (
-        joined["population"] *
-        joined["res_area"] / joined["locality_res_area_total"]
-    )
-
-    total = joined["raw_weight"].sum()
-    if total <= 0:
-        raise ValueError("Total residential sampling weight is zero.")
-
-    joined["prob"] = joined["raw_weight"] / total
-
-    return joined
-
-#endregion
-
-#TODO do the trips but also in reverse?
-#TODO allow for residential to residentail trips?
-#region sampling Destination
-
-def prepare_destinations(gdf):
-    gdf = gdf.copy()
-
-    if not all(gdf.geometry.geom_type == "Point"):
-        gdf["geometry"] = gdf.geometry.centroid
-
-    gdf["dest_type"] = gdf.apply(infer_destination_type, axis=1)
-
-    return gdf[["geometry", "dest_type"]]
-
-def infer_destination_type(row):
-    office = row.get("office")
-    shop = row.get("shop")
-    amenity = row.get("amenity")
-
-    # --- Office → work ---
-    if pd.notna(office):
-        return "work"
-
-    # --- Shop → shopping ---
-    if pd.notna(shop):
-        return "shop"
-
-    # --- Amenity → mapped ---
-    if pd.notna(amenity):
-        if amenity in ODUtil.AMENITY_KEEP:
-            return amenity
-        else:
-            return "other"
-
-def sample_trip_purpose(rng, purpose_shares):
-    purposes = np.array(list(purpose_shares.keys()))
-    probs = np.array(list(purpose_shares.values()), dtype=float)
-    probs /= probs.sum()
-    idx = rng.choice(len(purposes), p=probs)
-    return purposes[idx]
-
-def filter_destinations_for_purpose(destinations, purpose, mapping):
-    allowed = mapping[purpose]
-
-    if "*" in allowed:
-        return destinations
-
-    return destinations[destinations["dest_type"].isin(allowed)]
-
-
-def sample_destination_for_purpose( origin:Point, destinations:gpd.GeoDataFrame, purpose, purpose_to_subtypes, rng ,beta:float=DEFAULT_BETA, max_dist:float|None=None,):
-    """
-    Sample an destinatio using an exponential gravity model.
-
-    Parameters
-    ----------
-    origin : Point
-        Origin point (projected CRS)
-    gdf_destinations : GeoDataFrame
-        Destination locations (points or polygons)
-    beta : float
-        Distance decay parameter (1/meters)
-    max_dist : float, optional
-        Hard cutoff distance in meters
-
-    Returns
-    -------
-    shapely.geometry.Point
-    """
-
-    candidates = filter_destinations_for_purpose(
-            destinations, purpose, purpose_to_subtypes
-        )
-
-    if len(candidates) == 0:
-        raise ValueError(f"No destinations for purpose={purpose}")
-
-    distances = candidates.geometry.distance(origin)
-
-    if max_dist is not None:
-        mask = distances <= max_dist
-        candidates = candidates[mask]
-        distances = distances[mask]
-
-        if len(candidates) == 0:
-            raise ValueError(f"No destinations within max_dist for {purpose}")
-
-    weights = np.exp(-beta * distances.to_numpy())
-
-    probs = weights / weights.sum()
-    idx = rng.choice(len(candidates), p=probs)
-
-    return candidates.iloc[idx].geometry
-
-
-#region TAZ mapping and region-level OD counters
-def build_region_od_table(
-    G: nx.MultiDiGraph,
-    od_counts,
-    *,
-    micro_attr: str = "locality",
-    locality_to_region: dict[str, str] | None = None,
-) -> pd.DataFrame:
-    """
-    Build an OD matrix table aggregated by region or locality.
-
-    Parameters
-    ----------
-    G
-        Graph whose nodes contain locality attributes.
-    od_counts
-        Either:
-          - dict {(origin_node, destination_node): weight}
-          - list [(origin_node, destination_node, weight)]
-    micro_attr
-        Node attribute storing locality.
-    locality_to_region
-        Optional mapping {locality -> region}.
-        If provided, aggregation happens at region level.
-
-    Returns
-    -------
-    DataFrame
-        OD matrix where rows = origin region/locality
-        and columns = destination region/locality
-    """
-    flows = {}
-
-    if isinstance(od_counts, Mapping):
-        iterator = ((o, d, w) for (o, d), w in od_counts.items())
-    else:
-        iterator = od_counts
-
-    for o, d, w in iterator:
-
-        o_local = G.nodes[int(o)].get(micro_attr)
-        d_local = G.nodes[int(d)].get(micro_attr)
-
-        if o_local is None or d_local is None:
-            continue
-
-        if locality_to_region is not None:
-            o_region = locality_to_region.get(o_local)
-            d_region = locality_to_region.get(d_local)
-        else:
-            o_region = o_local
-            d_region = d_local
-
-        if o_region is None or d_region is None:
-            continue
-
-        key = (o_region, d_region)
-
-        flows[key] = flows.get(key, 0.0) + float(w)
-
-    df = pd.DataFrame(
-        [(o, d, w) for (o, d), w in flows.items()],
-        columns=["origin", "destination", "flow"],
-    )
-
-    od_table = df.pivot_table(
-        index="origin",
-        columns="destination",
-        values="flow",
-        aggfunc="sum",
-        fill_value=0,
-    )
-
-    if locality_to_region is not None:
-        od_table = od_table.reindex(
-            index=ODUtil.REGION_ORDER,
-            columns=ODUtil.REGION_ORDER,
-            fill_value=0,
-        )
-    else:
-        # Keep locality-level labels when no region mapping is requested.
-        locality_order = sorted(
-            set(od_table.index.to_list()) | set(od_table.columns.to_list())
-        )
-        od_table = od_table.reindex(
-            index=locality_order,
-            columns=locality_order,
-            fill_value=0,
-        )
-
-    return od_table
-
-
-
-def build_region_od_tables_from_timeline(
-    timeline,
-    G,
-    *,
-    micro_attr: str = "locality",
-    locality_to_region: dict[str, str] | None = None,
-):
-    """
-    Build a list of OD matrices from a timeline structure.
-
-    Parameters
-    ----------
-    timeline : list[dict]
-        Output from gen_od_trips_timeline()
-    G : nx.MultiDiGraph
-    micro_attr : str
-        Node attribute storing locality
-    locality_to_region : dict | None
-        Optional mapping for aggregation
-
-    Returns
-    -------
-    list of dicts
-        [
-            {
-                "begin": int,
-                "end": int,
-                "od_table": DataFrame
-            },
-            ...
-        ]
-    """
-
-    results = []
-
-    for interval in timeline:
-
-        od_table = build_region_od_table(
-            G,
-            interval["ods"],
-            micro_attr=micro_attr,
-            locality_to_region=locality_to_region,
-        )
-
-        results.append({
-            "begin": interval["begin"],
-            "end": interval["end"],
-            "od_table": od_table
-        })
-
-    return results
-
-def build_total_region_od_table(
-    timeline,
-    G,
-    *,
-    micro_attr="locality",
-    locality_to_region=None,
-):
-
-    all_ods = []
-
-    for interval in timeline:
-        all_ods.extend(interval["ods"])
-
-    return build_region_od_table(
-        G,
-        all_ods,
-        micro_attr=micro_attr,
-        locality_to_region=locality_to_region,
-    )
-
-#endregion
+from Demand import ODSampling, ODConstants
 
 #region gen_OD
 def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=500,):
@@ -393,74 +40,74 @@ def gen_random_OD_counter( G, rng, n_trips, min_euclid_m=500,):
 
     return c
 
-def gen_demand_OD_counter(
+def gen_home_based_tour_counter(
     G,
     residential_sampling,
     gdf_destinations,
     rng,
-    n_trips: int = 50,
-    beta: float = DEFAULT_BETA,
+    n_tours: int = 50,
+    beta: float = ODConstants.DEFAULT_BETA,
     max_dist: float | None = None,
 ):
     od_counts = Counter()
+
     residential_geoms = residential_sampling["geoms"]
     residential_probs = residential_sampling["probs"]
     residential_regions = residential_sampling["regions"]
 
-    poly_idxs = rng.choice(
-        len(residential_geoms),
-        size=n_trips,
-        p=residential_probs
-    )
+    poly_idxs = rng.choice(len(residential_geoms), size=n_tours, p=residential_probs)
 
-    origin_pts = []
-    dest_pts = []
+    outward_origins = []
+    outward_dests = []
+    return_origins = []
+    return_dests = []
+
     for i in poly_idxs:
-        origin_pt = sample_point_in_polygon(residential_geoms[i], rng)
+        home_pt = ODSampling.sample_point_in_polygon(residential_geoms[i], rng)
         origin_region = residential_regions[i]
 
-        purpose_shares = ODUtil.PURPOSE_SHARES_BY_REGION.get(origin_region)
-        if purpose_shares is None:
-            raise ValueError(f"Missing purpose shares for region={origin_region}")
+        dest_region = ODSampling.sample_dest_region_given_origin(
+            origin_region,
+            ODSampling.DEST_REGION_GIVEN_ORIGIN,
+            rng,
+        )
 
-        purpose = sample_trip_purpose(rng, purpose_shares)
+        purpose = ODSampling.sample_purpose_given_dest_region(
+            dest_region,
+            ODSampling.OUTWARD_PURPOSE_SHARES_BY_DEST_REGION,
+            rng,
+        )
 
-        dest_pt = sample_destination_for_purpose(
-            origin=origin_pt,
+        dest_pt = ODSampling.sample_destination_for_region_and_purpose(
+            origin=home_pt,
             destinations=gdf_destinations,
+            dest_region=dest_region,
             purpose=purpose,
+            purpose_to_subtypes=ODConstants.PURPOSE_TO_TYPES,
             rng=rng,
-            purpose_to_subtypes=ODUtil.PURPOSE_TO_TYPES,
             beta=beta,
             max_dist=max_dist,
         )
 
-        origin_pts.append(origin_pt)
-        dest_pts.append(dest_pt)
+        outward_origins.append(home_pt)
+        outward_dests.append(dest_pt)
 
-    if not dest_pts:
-        return od_counts
+        # explicit return-home leg
+        return_origins.append(dest_pt)
+        return_dests.append(home_pt)
 
+    o1 = ox.distance.nearest_nodes(G, [p.x for p in outward_origins], [p.y for p in outward_origins])
+    d1 = ox.distance.nearest_nodes(G, [p.x for p in outward_dests], [p.y for p in outward_dests])
+    o2 = ox.distance.nearest_nodes(G, [p.x for p in return_origins], [p.y for p in return_origins])
+    d2 = ox.distance.nearest_nodes(G, [p.x for p in return_dests], [p.y for p in return_dests])
 
-    origin_nodes = ox.distance.nearest_nodes(
-        G,
-        [p.x for p in origin_pts[:len(dest_pts)]],
-        [p.y for p in origin_pts[:len(dest_pts)]],
-    )
-
-    dest_nodes = ox.distance.nearest_nodes(
-        G,
-        [p.x for p in dest_pts],
-        [p.y for p in dest_pts],
-    )
-
-    # Casting from numpy ints to normal python ints as there were some compatability issues
-    origin_nodes = [int(n) for n in origin_nodes]
-    dest_nodes = [int(n) for n in dest_nodes]
-
-    for o, d in zip(origin_nodes, dest_nodes):
+    for o, d in zip(o1, d1):
         if o != d:
-            od_counts[(o, d)] += 1
+            od_counts[(int(o), int(d))] += 1
+
+    for o, d in zip(o2, d2):
+        if o != d:
+            od_counts[(int(o), int(d))] += 1
 
     return od_counts
 
@@ -473,7 +120,7 @@ def gen_OD_trips(
     rng,
     n_trips: int = 50,
     random_frac: float = 0.0,
-    beta: float = DEFAULT_BETA,
+    beta: float = ODConstants.DEFAULT_BETA,
     max_dist: float | None = None,
     min_random_dist: float = 3000,
 ):
@@ -492,20 +139,26 @@ def gen_OD_trips(
 
     if not (0.0 <= random_frac <= 1.0):
         raise ValueError("random_frac must be in [0, 1]")
+    
+    # split requested trips into demand trips + random trips
+    n_random = int(random_frac * n_trips)
+    n_demand_trip_target = max(0, n_trips - n_random)
+
+    # each sampled tour produces ~2 trips
+    n_tours = int(np.ceil(n_demand_trip_target / 2.0))
 
     # --- Demand ODs ---
-    demand_counter = gen_demand_OD_counter(
+    demand_counter = gen_home_based_tour_counter(
         G,
         residential_sampling,
         gdf_destinations,
         rng,
-        n_trips=n_trips,
+        n_tours=n_tours,
         beta=beta,
         max_dist=max_dist,
     )
 
     # --- Random ODs ---
-    n_random = int(random_frac * n_trips)
     if n_random > 0:
         random_counter = gen_random_OD_counter(
             G,
@@ -518,11 +171,7 @@ def gen_OD_trips(
 
     # --- Combine ---
     od_counts = demand_counter + random_counter
-
-    # --- Convert to weighted list ---
-    ods = [(o, d, w) for (o, d), w in od_counts.items()]
-
-    return ods
+    return od_counts
 
 
 def gen_od_trips_timeline(
@@ -532,7 +181,7 @@ def gen_od_trips_timeline(
     gdf_destinations,
     rng,
     random_frac: float = 0.0,
-    beta: float = DEFAULT_BETA,
+    beta: float = ODConstants.DEFAULT_BETA,
     max_dist: float | None = None,
     min_random_dist: float = 3000,
 ):
@@ -579,22 +228,7 @@ def gen_od_trips_timeline(
     return intervals
 
 
-def aggregate_timeline_ods(timeline):
-    """
-    Sum all OD flows across intervals.
 
-    Returns
-    -------
-    Counter[(origin,destination)] -> total trips
-    """
-
-    total_counter = Counter()
-
-    for interval in timeline:
-        for origin, dest, trips in interval["ods"]:
-            total_counter[(origin, dest)] += trips
-
-    return total_counter
 
 
 

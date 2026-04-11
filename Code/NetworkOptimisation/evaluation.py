@@ -10,6 +10,7 @@ from shapely.geometry import Point
 from shapely.ops import unary_union
 from Demand import paths_util
 import nx_parallel
+from constants import ODPair
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
@@ -30,7 +31,7 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
     }
 
 
-def compute_od_costs(G: MultiDiGraph, OD, weight: str = "length") -> dict:
+def compute_od_costs(G: MultiDiGraph, OD_list:list[ODPair], weight: str = "length") -> dict:
     """
     Returns {(o, d): path_cost} for reachable OD pairs.
     Unreachable or invalid pairs are omitted.
@@ -38,7 +39,12 @@ def compute_od_costs(G: MultiDiGraph, OD, weight: str = "length") -> dict:
     costs = {}
     nodes = set(G.nodes())
 
-    for (o, d), w in OD.items():
+    for od in OD_list:
+        o, d = int(od.origin), int(od.destination)
+        
+        #Decide which weight to use based on the cost metric
+        w = od.bike_weight if weight == "bike_cost_penalty" else od.car_weight
+
         if w <= 0 or o == d:
             continue
         if o not in nodes or d not in nodes:
@@ -46,27 +52,23 @@ def compute_od_costs(G: MultiDiGraph, OD, weight: str = "length") -> dict:
 
         try:
             c = nx.shortest_path_length(G, source=o, target=d, weight=weight)
+            costs[(o, d)] = float(c)
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
-
-        if c <= 0:
-            continue
-
-        costs[(o, d)] = float(c)
 
     return costs
 
 #TODO idk so many thoughts
 # is missing_demand and covered demand extra?
 # Technically could keep the whole bike network, and not just the largest protected bike?
-def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD,) -> dict:
+def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD_list:list[ODPair],) -> dict:
     weighted_sum = 0.0
     covered_demand = 0.0
     num_pairs = 0
 
-    for (o, d), w in OD.items():
-        if w <= 0 or o == d:
-            continue
+    for od in OD_list:
+        o, d = int(od.origin), int(od.destination)
+        w = od.car_weight # Directness is usually weighted by the trip demand
 
         L_bike = bike_costs.get((o, d))
         L_drive = drive_costs.get((o, d))
@@ -149,22 +151,27 @@ def calc_coverage(G, buffer_m=500):
         "union_geom": union_geom  # useful for debugging/plotting
     }
 
-def calc_total_cost_from_costs( bike_costs: dict, OD, cost_name: str = "bike",) -> dict:
+def calc_total_cost_from_costs(costs_dict: dict, OD_list:list[ODPair], cost_name: str = "bike",) -> dict:
     total_cost = 0.0
     covered_demand = 0.0
     missing_demand = 0.0
     num_pairs = 0
 
-    for (o, d), w in OD.items():
+    for od in OD_list:
+        o, d = int(od.origin), int(od.destination)
+        
+        # Isolation: Get the weight specifically for the mode being measured
+        w = od.bike_weight if cost_name == "bike" else od.car_weight
+
         if w <= 0 or o == d:
             continue
 
-        c_bike = bike_costs.get((o, d))
-        if c_bike is None or c_bike < 0:
+        c_val = costs_dict.get((o, d))
+        if c_val is None or c_val < 0:
             missing_demand += w
             continue
 
-        total_cost += w * c_bike
+        total_cost += w * c_val
         covered_demand += w
         num_pairs += 1
 

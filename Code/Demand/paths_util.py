@@ -1,7 +1,7 @@
 import networkx as nx
 from typing import Literal, Optional
 from collections import Counter, deque
-from constants import Arc, OD, Seg
+from constants import Arc, OD, Seg, ODPair
 from networkx import MultiDiGraph
 import graph_util
 import nx_parallel
@@ -20,24 +20,17 @@ def total_cost_from_paths(G, paths, weight_attr):
 #TODO these generated paths do not provide the K key, there are two solutions
 #1. k = min(edges, key=lambda x: edges[x].get(weight_attr, float('inf')))
 #2. convert to digraph, extra benefit of being able to use cupgraph, nvm that wont really work
-def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current", "bike_cost_penalty"]):
+def compute_candidate_paths(G, OD_list: list[ODPair], path_weight_metric:Literal["car_cost_current", "bike_cost_penalty", "length"]):
     """
-    Compute a single shortest (bike-optimal) path for each OD pair.
-    
-    Parameters
-    ----------
-    G : networkx graph
-        Network with 'bike_cost_penalty' edge weights.
-    OD : iterable of (origin, destination)
-    path_weight_metric: which attribute to use as edge weight for shortest path
-    Returns
-    -------
-    dict
-        {(origin, destination): path}
+    Compute a single shortest path for each ODPair.
     """
     paths = {}
 
-    for (o, d), w in OD.items():
+    for od in OD_list:
+        o, d = int(od.origin), int(od.destination)
+        
+        # Grab the relevant weight to store with the path based on the metric
+        w = od.bike_weight if path_weight_metric == "bike_cost_penalty" else od.car_weight
 
         try:
             path = nx.shortest_path(G, o, d, weight=path_weight_metric)
@@ -47,21 +40,27 @@ def compute_candidate_paths(G, OD, path_weight_metric:Literal["car_cost_current"
 
     return paths
 
-def calculate_path_metrics(G, od_trips, weight_attr="length"):
+def calculate_path_metrics(G, od_trips: list[ODPair], weight_attr="length"):
     """
-    Separated logic for path calculation. 
-    Returns the average cost (e.g., length in km) for a set of trips.
+    Returns the average cost for a list of ODPairs, isolated by mode.
     """
-    # Calculate paths (This is the slow part)
-    paths = compute_candidate_paths(G, od_trips, "car_cost_current")
+    # 1. Compute paths
+    paths = compute_candidate_paths(G, od_trips, weight_attr)
     
-    # Calculate total cost using your helper
-    total_m = total_cost_from_paths(G, paths, weight_attr)
+    # 2. Calculate total cost (weighted by trip counts)
+    total_cost = total_cost_from_paths(G, paths, weight_attr)
     
-    # Calculate average in km
-    total_trips = sum(w for (o, d, w) in od_trips)
-    avg_m = (total_m / total_trips)
-    return avg_m
+    # 3. Determine the divisor based on the mode being measured
+    if weight_attr == "bike_cost_penalty":
+        total_relevant_trips = sum(od.bike_weight for od in od_trips)
+    else:
+        # Default to car_weight for 'length', 'car_cost_current', etc.
+        total_relevant_trips = sum(od.car_weight for od in od_trips)
+    
+    if total_relevant_trips == 0:
+        return 0.0
+        
+    return total_cost / total_relevant_trips
 
 
 #TODO this should be on the actual k
