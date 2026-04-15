@@ -6,7 +6,7 @@ import pandas as pd
 import osmnx as ox
 from collections import Counter
 from collections.abc import Mapping
-from constants import OD, ODPair
+from constants import OD
 from typing import Any, Optional, Literal
 import networkx as nx
 import constants
@@ -239,7 +239,7 @@ def _iter_od_triples(od_data):
     Supported inputs:
       - Mapping[(o, d) -> w]
       - Iterable[(o, d, w)]
-      - Iterable[ODPair] (uses bike_weight + car_weight as total weight)
+      - Iterable[((o, d), w)] (e.g. Counter.items())
     """
     if isinstance(od_data, Mapping):
         rows = ((o, d, w) for (o, d), w in od_data.items())
@@ -247,10 +247,6 @@ def _iter_od_triples(od_data):
         rows = od_data
 
     for row in rows:
-        if isinstance(row, ODPair):
-            yield int(row.origin), int(row.destination), float(row.bike_weight + row.car_weight)
-            continue
-
         try:
             row_vals = tuple(row)
             if len(row_vals) == 3:
@@ -262,31 +258,36 @@ def _iter_od_triples(od_data):
                 raise ValueError("row has invalid length")
         except Exception as exc:
             raise TypeError(
-                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[ODPair]."
+                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[((o,d),w)]."
             ) from exc
 
         yield int(o), int(d), float(w)
 
 
+def to_od_counter(od_data) -> OD:
+    """
+    Canonical conversion entrypoint to Counter[(origin, destination)] -> weight.
+    """
+    out: OD = Counter()
+    for o, d, w in _iter_od_triples(od_data):
+        out[(o, d)] += float(w)
+    return out
+
+
 def normalize_od_pairs(od_pairs: OD) -> OD:
     """
-    Normalize bike/car weights so the mean total OD weight is 1 across positive-demand ODs.
+    Normalize OD weights so mean positive OD weight is 1.
     """
-    total_weights = [p.bike_weight + p.car_weight for p in od_pairs if (p.bike_weight + p.car_weight) > 0]
+    od_counts = to_od_counter(od_pairs)
+    total_weights = [float(w) for w in od_counts.values() if float(w) > 0]
     if not total_weights:
-        return list(od_pairs)
+        return Counter(od_counts)
 
     scale = len(total_weights) / sum(total_weights)
-    return [
-        ODPair(
-            p.origin,
-            p.destination,
-            p.bike_weight * scale,
-            p.car_weight * scale,
-            p.is_auxiliary,
-        )
-        for p in od_pairs
-    ]
+    out: OD = Counter()
+    for key, w in od_counts.items():
+        out[key] = float(w) * scale
+    return out
 
 
 def to_od_pairs(
@@ -298,47 +299,26 @@ def to_od_pairs(
     normalize: bool = False,
 ) -> OD:
     """
-    Canonical ODPair conversion entrypoint used across demand/evaluation code.
+    Backward-compatible helper that now returns Counter[(o,d)] only.
 
     mode
     ----
-    - "split":    total_weight is split by `bike_share` and (1-bike_share)
-    - "car_only": all weight goes to car_weight
-    - "bike_only": all weight goes to bike_weight
+    Retained for compatibility with older call sites.
+    With counter-only OD demand, mode and is_auxiliary are metadata-only.
     """
     if mode == "split" and not (0.0 <= bike_share <= 1.0):
         raise ValueError("bike_share must be in [0, 1] when mode='split'.")
+    if mode not in {"split", "car_only", "bike_only"}:
+        raise ValueError(f"Unknown mode '{mode}'.")
 
-    out: OD = []
-    for o, d, w in _iter_od_triples(od_data):
-        if mode == "split":
-            bike_w = w * bike_share
-            car_w = w * (1.0 - bike_share)
-        elif mode == "car_only":
-            bike_w = 0.0
-            car_w = w
-        elif mode == "bike_only":
-            bike_w = w
-            car_w = 0.0
-        else:
-            raise ValueError(f"Unknown mode '{mode}'.")
-
-        out.append(
-            ODPair(
-                origin=o,
-                destination=d,
-                bike_weight=float(bike_w),
-                car_weight=float(car_w),
-                is_auxiliary=is_auxiliary,
-            )
-        )
+    out = to_od_counter(od_data)
 
     if normalize:
         return normalize_od_pairs(out)
     return out
 
 
-def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
+def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> OD:
     """
     Backward-compatible helper for:
       to_od_pairs(..., mode="split", normalize=True)
@@ -359,18 +339,15 @@ def append_auxiliary_chain_od_pairs(
     shuffle_nodes: bool = True,
 ) -> OD:
     """
-    Augment demand OD with chained auxiliary OD pairs:
+    Augment demand OD with chained auxiliary OD pairs (zero weight):
       (v1,v2), (v2,v3), ..., (v{n-1},vn), (vn,v1)
-
-    Auxiliary pairs are assigned zero objective weights:
-      bike_weight = 0.0, car_weight = 0.0, is_auxiliary = True
 
     Notes
     -----
     - Duplicates (o,d) already present in OD_demand are not added again.
     - If fewer than 2 nodes are provided, input OD is returned unchanged.
     """
-    od_aug: OD = list(OD_demand)
+    od_aug: OD = Counter(to_od_counter(OD_demand))
     unique_nodes = list(dict.fromkeys(nodes))
     if len(unique_nodes) < 2:
         return od_aug
@@ -378,36 +355,20 @@ def append_auxiliary_chain_od_pairs(
     if shuffle_nodes:
         rng.shuffle(unique_nodes)
 
-    existing_pairs = {(od.origin, od.destination) for od in od_aug}
+    existing_pairs = set(od_aug.keys())
 
     for i in range(len(unique_nodes) - 1):
         o = int(unique_nodes[i])
         d = int(unique_nodes[i + 1])
         if (o, d) in existing_pairs:
             continue
-        od_aug.append(
-            ODPair(
-                origin=o,
-                destination=d,
-                bike_weight=0.0,
-                car_weight=0.0,
-                is_auxiliary=True,
-            )
-        )
+        od_aug[(o, d)] = 0.0
         existing_pairs.add((o, d))
 
     # Close the chain with (vn, v1)
     o = int(unique_nodes[-1])
     d = int(unique_nodes[0])
     if (o, d) not in existing_pairs:
-        od_aug.append(
-            ODPair(
-                origin=o,
-                destination=d,
-                bike_weight=0.0,
-                car_weight=0.0,
-                is_auxiliary=True,
-            )
-        )
+        od_aug[(o, d)] = 0.0
 
     return od_aug

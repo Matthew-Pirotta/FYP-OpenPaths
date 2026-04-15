@@ -6,6 +6,7 @@ road segments to improve cycling utility while limiting harm to car travel cost.
 """
 
 from collections import defaultdict
+from collections.abc import Mapping
 from networkx import MultiDiGraph
 import gurobipy as gp
 from gurobipy import GRB
@@ -13,8 +14,8 @@ import copy
 import random
 from typing import Optional, Callable
  
-from constants import SafetyClass
-from Demand import paths_util, ODGeneration
+from constants import SafetyClass, OD
+from Demand import paths_util
 import graph_util
 
 def solve_batch_knapsack(seg_coef: dict, car_harm_seg, batch_size: int, harm_remaining_frac:float, C0):
@@ -255,7 +256,28 @@ def solve_bike_lane_selection(G_master, OD, batch_size:int, budget_total:int, ca
 
 Arc = tuple
 Seg = tuple
-OD = list[ODGeneration.ODPair]
+
+
+def _iter_od_triples(od_data: OD):
+    if isinstance(od_data, Mapping):
+        rows = ((o, d, w) for (o, d), w in od_data.items())
+    else:
+        rows = od_data
+
+    for row in rows:
+        try:
+            row_vals = tuple(row)
+            if len(row_vals) == 3:
+                o, d, w = row_vals
+            elif len(row_vals) == 2:
+                (o, d), w = row_vals
+            else:
+                raise ValueError("row has invalid length")
+        except Exception as exc:
+            raise TypeError(
+                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[((o,d),w)]."
+            ) from exc
+        yield int(o), int(d), float(w)
 
 
 def _prepare_flow_lp_data(
@@ -338,7 +360,7 @@ def _add_capacity_block(
 
 def _add_flow_block(
     m: gp.Model,
-    OD: OD,
+    od_rows: list[tuple[int, int, float]],
     all_arcs: list[Arc],
     lambda_c_var: dict[Arc, gp.Var],
     lambda_b_var: dict[Arc, gp.Var],
@@ -362,11 +384,10 @@ def _add_flow_block(
     od_car_arcs_by_idx: dict[int, set[Arc]] = {}
     od_bike_arcs_by_idx: dict[int, set[Arc]] = {}
 
-    for p, od in enumerate(OD):
-        s, t = od.origin, od.destination
+    for p, (s, t, _w) in enumerate(od_rows):
         phi = 1.0  # Wiedemann-style; keep 1.0 even for auxiliary if you want connectivity
 
-        od_key = paths_util.make_od_key(od)
+        od_key = paths_util.make_od_key((s, t))
 
         if od_allowed_arcs_car is None:
             arcs_car = car_arcs
@@ -472,6 +493,7 @@ def solve_flow_lp(
     car_arcs,
     bike_arcs,
     *,
+    bike_share: float = 0.1,
     alpha_bike_space: float = 0.5,
     # edge attribute names
     car_cost_attr: str = "car_cost_current",
@@ -543,6 +565,11 @@ def solve_flow_lp(
     - Be careful: multi-commodity flow size is O(|OD|*|E|). Use od_allowed_arcs in real instances.
     """
 
+    if not (0.0 <= bike_share <= 1.0):
+        raise ValueError("bike_share must be in [0, 1].")
+
+    od_rows = list(_iter_od_triples(OD))
+
     all_arcs, nodes, t_c, t_beta, t_b = _prepare_flow_lp_data(
         G=G,
         seg_to_arcs=seg_to_arcs,
@@ -573,7 +600,7 @@ def solve_flow_lp(
 
     f_c_var, f_b_var, f_beta_var, od_car_arcs_by_idx, od_bike_arcs_by_idx = _add_flow_block(
         m=m,
-        OD=OD,
+        od_rows=od_rows,
         all_arcs=all_arcs,
         lambda_c_var=lambda_c_var,
         lambda_b_var=lambda_b_var,
@@ -592,14 +619,14 @@ def solve_flow_lp(
             "[lp-stats] "
             f"decision_nodes={len(decision_nodes)} "
             f"decision_edges={len(eligible_bike_arcs)} "
-            f"od_size={len(OD)} "
+            f"od_size={len(od_rows)} "
             f"num_vars={m.NumVars}"
         )
 
     obj = gp.LinExpr()
-    for p, od in enumerate(OD):
-        omega_b = float(od.bike_weight)
-        omega_c = float(od.car_weight)
+    for p, (_o, _d, w_total) in enumerate(od_rows):
+        omega_b = float(w_total) * bike_share
+        omega_c = float(w_total) * (1.0 - bike_share)
 
         # cars on car corridor
         for a in od_car_arcs_by_idx[p]:
@@ -770,6 +797,7 @@ def baseline_objective_value(
     bike_arcs,
     *,
     gamma: float,
+    bike_share: float = 0.1,
     fixed_bike_1_init: Optional[set[Arc]] = None,  #arcs fixed to have a bike lane
     fixed_bike_0_init: Optional[set[Arc]] = None,  #arcs fixed to have no bike lane (optional)
     alpha_bike_space: float = 0.5,
@@ -800,6 +828,7 @@ def baseline_objective_value(
         fixed_bike_1=baseline_fixed_bike_1,
         fixed_bike_0=baseline_fixed_bike_0,
         gamma=gamma,
+        bike_share=bike_share,
         car_arcs=car_arcs,
         bike_arcs=bike_arcs,
         alpha_bike_space=alpha_bike_space,
@@ -833,6 +862,7 @@ def round_lp_solution_segment_aware(
     bike_arcs,
     *,
     gamma: float,
+    bike_share: float = 0.1,
     k_fix: int,
     budget_bike_lanes: int,
     fix_both_directions: bool = False,  # if True, attempt to fix both arcs in a segment
@@ -866,6 +896,7 @@ def round_lp_solution_segment_aware(
             car_arcs = car_arcs,
             bike_arcs=bike_arcs,
             gamma=gamma,
+            bike_share=bike_share,
             fixed_bike_1_init=fixed_bike_1,
             fixed_bike_0_init=fixed_bike_0,
             alpha_bike_space=alpha_bike_space,
@@ -889,6 +920,7 @@ def round_lp_solution_segment_aware(
             fixed_bike_1=fixed_bike_1,
             fixed_bike_0=fixed_bike_0,
             gamma=gamma,
+            bike_share=bike_share,
             car_arcs = car_arcs,
             bike_arcs=bike_arcs,
             alpha_bike_space=alpha_bike_space,

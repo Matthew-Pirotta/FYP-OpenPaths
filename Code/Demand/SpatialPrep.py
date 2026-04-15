@@ -7,7 +7,6 @@ import random
 import osmnx as ox
 from collections import Counter
 from collections.abc import Mapping
-from constants import OD, ODPair
 from typing import Any, Optional
 import networkx as nx
 

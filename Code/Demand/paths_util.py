@@ -1,7 +1,8 @@
 import networkx as nx
 from typing import Literal, Optional
 from collections import Counter, deque
-from constants import Arc, OD, Seg, ODPair
+from collections.abc import Mapping
+from constants import Arc, OD, Seg
 from networkx import MultiDiGraph
 import graph_util
 import nx_parallel
@@ -25,18 +26,35 @@ def total_cost_from_paths(G, paths, weight_attr):
 #TODO these generated paths do not provide the K key, there are two solutions
 #1. k = min(edges, key=lambda x: edges[x].get(weight_attr, float('inf')))
 #2. convert to digraph, extra benefit of being able to use cupgraph, nvm that wont really work
-def compute_candidate_paths(G, OD_list: list[ODPair], path_weight_metric:Literal["car_cost_current", "bike_cost_penalty", "length"]):
+def _iter_od_triples(od_data):
+    if isinstance(od_data, Mapping):
+        rows = ((o, d, w) for (o, d), w in od_data.items())
+    else:
+        rows = od_data
+
+    for row in rows:
+        try:
+            row_vals = tuple(row)
+            if len(row_vals) == 3:
+                o, d, w = row_vals
+            elif len(row_vals) == 2:
+                (o, d), w = row_vals
+            else:
+                raise ValueError("row has invalid length")
+        except Exception as exc:
+            raise TypeError(
+                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[((o,d),w)]."
+            ) from exc
+        yield int(o), int(d), float(w)
+
+
+def compute_candidate_paths(G, OD_list, path_weight_metric:Literal["car_cost_current", "bike_cost_penalty", "length"]):
     """
-    Compute a single shortest path for each ODPair.
+    Compute a single shortest path for each OD pair in a counter-like OD demand.
     """
     paths = {}
 
-    for od in OD_list:
-        o, d = int(od.origin), int(od.destination)
-        
-        # Grab the relevant weight to store with the path based on the metric
-        w = od.bike_weight if path_weight_metric == "bike_cost_penalty" else od.car_weight
-
+    for o, d, w in _iter_od_triples(OD_list):
         try:
             path = nx.shortest_path(G, o, d, weight=path_weight_metric)
             paths[(o, d, w)] = path
@@ -45,9 +63,9 @@ def compute_candidate_paths(G, OD_list: list[ODPair], path_weight_metric:Literal
 
     return paths
 
-def calculate_path_metrics(G, od_trips: list[ODPair], weight_attr="length"):
+def calculate_path_metrics(G, od_trips, weight_attr="length"):
     """
-    Returns the average cost for a list of ODPairs, isolated by mode.
+    Returns weighted average path cost for OD demand.
     """
     # 1. Compute paths
     paths = compute_candidate_paths(G, od_trips, weight_attr)
@@ -55,12 +73,8 @@ def calculate_path_metrics(G, od_trips: list[ODPair], weight_attr="length"):
     # 2. Calculate total cost (weighted by trip counts)
     total_cost = total_cost_from_paths(G, paths, weight_attr)
     
-    # 3. Determine the divisor based on the mode being measured
-    if weight_attr == "bike_cost_penalty":
-        total_relevant_trips = sum(od.bike_weight for od in od_trips)
-    else:
-        # Default to car_weight for 'length', 'car_cost_current', etc.
-        total_relevant_trips = sum(od.car_weight for od in od_trips)
+    # 3. Normalize by total OD weight
+    total_relevant_trips = sum(w for _, _, w in _iter_od_triples(od_trips))
     
     if total_relevant_trips == 0:
         return 0.0
@@ -160,12 +174,12 @@ def _collect_seed_segments_for_od(
 
     if include_car_path:
         seed_segs.update(
-            _collect_path_seed_arcs(G, o, d, car_weight, arc_to_seg)
+            _collect_path_seed_arcs(G, o, d, car_weight)
         )
 
     if include_bike_path:
         seed_segs.update(
-            _collect_path_seed_arcs(G, o, d, bike_weight, arc_to_seg)
+            _collect_path_seed_arcs(G, o, d, bike_weight)
         )
 
     return seed_segs
@@ -189,21 +203,17 @@ def _expand_corridor(
     corridor_hops: int,
 ) -> set[Arc]:
     
-    segs_corr = _k_hop_arc_corridor(G_seg, seed_segs, corridor_hops, arc_to_seg)
+    segs_corr = _k_hop_arc_corridor(G_seg, seed_segs, corridor_hops)
     arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
     return arcs_corr
 
-ODKey = tuple[int, int, float, float, bool]
+ODKey = tuple[int, int]
 
 
 def make_od_key(od) -> ODKey:
-    return (
-        int(od.origin),
-        int(od.destination),
-        float(od.bike_weight),
-        float(od.car_weight),
-        bool(od.is_auxiliary),
-    )
+    if isinstance(od, tuple) and len(od) >= 2:
+        return int(od[0]), int(od[1])
+    raise TypeError("od must be a tuple-like row containing origin and destination.")
 
 
 #TODO wiedmann might be building it differently from me....
@@ -227,17 +237,20 @@ def build_od_allowed_arcs(
     od_allowed_car: dict[ODKey, set[Arc]] = {}
     od_allowed_bike: dict[ODKey, set[Arc]] = {}
 
-    for od in OD_list:
+    for o, d, _ in _iter_od_triples(OD_list):
+        od_key = (o, d)
+        if od_key in od_allowed_car and od_key in od_allowed_bike:
+            continue
+
         car_seed_segs: set[Seg] = set()
         bike_seed_segs: set[Seg] = set()
 
-        car_seed_segs = _collect_path_seed_arcs(G_drive, od.origin, od.destination, car_weight)
-        bike_seed_segs = _collect_path_seed_arcs(G_bike, od.origin, od.destination, bike_weight)
+        car_seed_segs = _collect_path_seed_arcs(G_drive, o, d, car_weight)
+        bike_seed_segs = _collect_path_seed_arcs(G_bike, o, d, bike_weight)
 
         car_arcs = _k_hop_arc_corridor(G_drive, car_seed_segs, corridor_hops)
         bike_arcs = _k_hop_arc_corridor(G_bike, bike_seed_segs, corridor_hops)
 
-        od_key = make_od_key(od)
         od_allowed_car[od_key] = car_arcs
         od_allowed_bike[od_key] = bike_arcs
 

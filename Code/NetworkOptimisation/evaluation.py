@@ -8,12 +8,34 @@ import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
 from shapely.ops import unary_union
+from collections.abc import Mapping
 from Demand import paths_util
 import nx_parallel
-from constants import ODPair
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
+
+
+def _iter_od_triples(od_data):
+    if isinstance(od_data, Mapping):
+        rows = ((o, d, w) for (o, d), w in od_data.items())
+    else:
+        rows = od_data
+
+    for row in rows:
+        try:
+            row_vals = tuple(row)
+            if len(row_vals) == 3:
+                o, d, w = row_vals
+            elif len(row_vals) == 2:
+                (o, d), w = row_vals
+            else:
+                raise ValueError("row has invalid length")
+        except Exception as exc:
+            raise TypeError(
+                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[((o,d),w)]."
+            ) from exc
+        yield int(o), int(d), float(w)
 
 def largest_by_length(G):
     #NOTE strongly connected true since roads cycle infrastructure is directional
@@ -31,7 +53,7 @@ def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
     }
 
 
-def compute_od_costs(G: MultiDiGraph, OD_list:list[ODPair], weight: str = "length") -> dict:
+def compute_od_costs(G: MultiDiGraph, OD_list, weight: str = "length") -> dict:
     """
     Returns {(o, d): path_cost} for reachable OD pairs.
     Unreachable or invalid pairs are omitted.
@@ -39,12 +61,7 @@ def compute_od_costs(G: MultiDiGraph, OD_list:list[ODPair], weight: str = "lengt
     costs = {}
     nodes = set(G.nodes())
 
-    for od in OD_list:
-        o, d = int(od.origin), int(od.destination)
-        
-        #Decide which weight to use based on the cost metric
-        w = od.bike_weight if weight == "bike_cost_penalty" else od.car_weight
-
+    for o, d, w in _iter_od_triples(OD_list):
         if w <= 0 or o == d:
             continue
         if o not in nodes or d not in nodes:
@@ -61,14 +78,12 @@ def compute_od_costs(G: MultiDiGraph, OD_list:list[ODPair], weight: str = "lengt
 #TODO idk so many thoughts
 # is missing_demand and covered demand extra?
 # Technically could keep the whole bike network, and not just the largest protected bike?
-def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD_list:list[ODPair],) -> dict:
+def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD_list,) -> dict:
     weighted_sum = 0.0
     covered_demand = 0.0
     num_pairs = 0
 
-    for od in OD_list:
-        o, d = int(od.origin), int(od.destination)
-        w = od.car_weight # Directness is usually weighted by the trip demand
+    for o, d, w in _iter_od_triples(OD_list):
 
         L_bike = bike_costs.get((o, d))
         L_drive = drive_costs.get((o, d))
@@ -151,18 +166,13 @@ def calc_coverage(G, buffer_m=500):
         "union_geom": union_geom  # useful for debugging/plotting
     }
 
-def calc_total_cost_from_costs(costs_dict: dict, OD_list:list[ODPair], cost_name: str = "bike",) -> dict:
+def calc_total_cost_from_costs(costs_dict: dict, OD_list, cost_name: str = "bike",) -> dict:
     total_cost = 0.0
     covered_demand = 0.0
     missing_demand = 0.0
     num_pairs = 0
 
-    for od in OD_list:
-        o, d = int(od.origin), int(od.destination)
-        
-        # Isolation: Get the weight specifically for the mode being measured
-        w = od.bike_weight if cost_name == "bike" else od.car_weight
-
+    for o, d, w in _iter_od_triples(OD_list):
         if w <= 0 or o == d:
             continue
 
