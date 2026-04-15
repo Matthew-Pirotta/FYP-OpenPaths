@@ -15,18 +15,29 @@ from Demand import ODConstants, ODUtil, ODSampling
 
 def prepare_residential(gdf_residential):
     """
-    Keep valid residential polygons and only required columns.
+    Keep valid residential polygons and merge touching/overlapping
+    polygonal geometries into single connected polygons.
     """
     gdf = gdf_residential.copy()
 
     gdf = gdf[gdf.geometry.notnull() & ~gdf.geometry.is_empty].copy()
+    gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
     gdf = gdf[["geometry"]].copy()
 
-    # explode multipolygons into separate polygons if needed
+    print(f"Before merge: {len(gdf)}")
+
+
+    # merge all touching/overlapping polygonal geometries
+    merged = gdf.geometry.union_all()
+
+    # back to GeoDataFrame, then explode once into separate connected parts
+    gdf = gpd.GeoDataFrame(geometry=[merged], crs=gdf.crs)
     gdf = gdf.explode(index_parts=False).reset_index(drop=True)
 
-    # keep only polygonal geometries
+    # keep only polygonal outputs
     gdf = gdf[gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
+
+    print(f"After merge: {len(gdf)}")
 
     return gdf
 
