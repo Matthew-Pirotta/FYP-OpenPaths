@@ -24,7 +24,7 @@ def build_network(sim_dir, simulation_name, verbose):
 
 
 def build_taz(sim_dir, simulation_name, verbose):
-    print("Running edgesInDistricts.py")
+    print("Running edgesInDistricts.py for cars")
     subprocess.run([
         "python",
         r"C:\Program Files (x86)\Eclipse\Sumo\tools\edgesInDistricts.py",
@@ -35,7 +35,7 @@ def build_taz(sim_dir, simulation_name, verbose):
         "-v"
     ], cwd=sim_dir, capture_output=True, check=True, text=True)
 
-    print("Running TAZ for bikes")
+    print("Running edgesInDistricts for bikes")
     subprocess.run([
         "python",
         r"C:\Program Files (x86)\Eclipse\Sumo\tools\edgesInDistricts.py",
@@ -49,6 +49,7 @@ def build_taz(sim_dir, simulation_name, verbose):
     bike_taz = filter_bike_taz(sim_dir, simulation_name)
 
 #TODO i dont like this
+#this is so that bikes dont spawn at the edge of bikeable networks and get stuck
 def filter_bike_taz(sim_dir, simulation_name):
     net = sumolib.net.readNet(os.path.join(sim_dir, f"{simulation_name}.net.xml"))
 
@@ -113,7 +114,7 @@ def generate_trips(sim_dir, simulation_name, car_scale, bike_scale, verbose):
         "od2trips",
         "-n", f"car_{simulation_name}.taz.xml",
         "--tazrelation-files", "../od_matrix.xml",
-        "--spread.uniform" ,"true",
+        "--spread.uniform" ,"true", #TODO i might want this to be false? and update writeup ovs
         "--vtype", "car_junction_safe",
         "--prefix", "car_",
         "--scale", f"{car_scale}",

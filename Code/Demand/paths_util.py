@@ -13,7 +13,12 @@ def total_cost_from_paths(G, paths, weight_attr):
     for (o, d, w), path in paths.items():
         cost = 0.0
         for u, v in zip(path[:-1], path[1:]):
-            cost += G[u][v][0][weight_attr]
+            # Pick the minimum-weight edge among all parallel edges
+            edge_data = G[u][v]
+            cost += min(
+                data[weight_attr]
+                for data in edge_data.values()
+            )
         total += w * cost
     return total
 

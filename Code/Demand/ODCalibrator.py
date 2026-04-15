@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 
 from Demand import ODGeneration, paths_util, ODAggregation, ODConstants, SpatialPrep
 import constants
-from constants import ODPair # Add this to your imports at the top
 
 def run_beta_sweep(
     G_drive,
@@ -119,16 +118,12 @@ def evaluate_od_against_real(
 
     od_norm = od_df.div(od_df.sum(axis=1), axis=0).fillna(0)
 
-    od_pairs_for_pathing = [
-        ODPair(
-            origin=int(o), 
-            destination=int(d), 
-            bike_weight=0.0, 
-            car_weight=float(w), 
-            is_auxiliary=False
-        )
-        for (o, d), w in od_counts.items()
-    ]
+    od_pairs_for_pathing = ODGeneration.to_od_pairs(
+        od_counts,
+        mode="car_only",
+        is_auxiliary=False,
+        normalize=False,
+    )
     avg_m = paths_util.calculate_path_metrics(G, od_pairs_for_pathing, "length")
 
     abs_avg_m_error = abs(ODConstants.TARGET_AVG_DISTANCE - avg_m)

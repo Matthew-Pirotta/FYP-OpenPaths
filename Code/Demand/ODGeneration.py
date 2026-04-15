@@ -7,7 +7,7 @@ import osmnx as ox
 from collections import Counter
 from collections.abc import Mapping
 from constants import OD, ODPair
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 import networkx as nx
 import constants
 
@@ -232,41 +232,124 @@ def gen_od_trips_timeline(
 
 
 
-def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
+def _iter_od_triples(od_data):
     """
-    Returns a normalized list of ODPair objects for the flow solver.
-    """
-    # 1. Generate raw ODPairs
-    raw_od = [
-        ODPair(
-            origin=o, 
-            destination=d, 
-            bike_weight=float(w) * bike_share, 
-            car_weight=float(w) * (1.0 - bike_share), 
-            is_auxiliary=False
-        )
-        for o, d, w in ods_counts
-    ]
+    Canonical iterator over (origin, destination, total_weight).
 
-    # 2. Calculate scaling factor (normalize by mean total weight)
-    total_weights = [p.bike_weight + p.car_weight for p in raw_od if (p.bike_weight + p.car_weight) > 0]
-    
+    Supported inputs:
+      - Mapping[(o, d) -> w]
+      - Iterable[(o, d, w)]
+      - Iterable[ODPair] (uses bike_weight + car_weight as total weight)
+    """
+    if isinstance(od_data, Mapping):
+        rows = ((o, d, w) for (o, d), w in od_data.items())
+    else:
+        rows = od_data
+
+    for row in rows:
+        if isinstance(row, ODPair):
+            yield int(row.origin), int(row.destination), float(row.bike_weight + row.car_weight)
+            continue
+
+        try:
+            row_vals = tuple(row)
+            if len(row_vals) == 3:
+                o, d, w = row_vals
+            elif len(row_vals) == 2:
+                # Supports rows shaped like: ((o, d), w), e.g. Counter.items().
+                (o, d), w = row_vals
+            else:
+                raise ValueError("row has invalid length")
+        except Exception as exc:
+            raise TypeError(
+                "od_data must be Mapping[(o,d)->w], Iterable[(o,d,w)], or Iterable[ODPair]."
+            ) from exc
+
+        yield int(o), int(d), float(w)
+
+
+def normalize_od_pairs(od_pairs: OD) -> OD:
+    """
+    Normalize bike/car weights so the mean total OD weight is 1 across positive-demand ODs.
+    """
+    total_weights = [p.bike_weight + p.car_weight for p in od_pairs if (p.bike_weight + p.car_weight) > 0]
     if not total_weights:
-        return raw_od
+        return list(od_pairs)
 
     scale = len(total_weights) / sum(total_weights)
-
-    # 3. Return scaled NamedTuples
     return [
         ODPair(
-            p.origin, 
-            p.destination, 
-            p.bike_weight * scale, 
-            p.car_weight * scale, 
-            p.is_auxiliary
+            p.origin,
+            p.destination,
+            p.bike_weight * scale,
+            p.car_weight * scale,
+            p.is_auxiliary,
         )
-        for p in raw_od
+        for p in od_pairs
     ]
+
+
+def to_od_pairs(
+    od_data,
+    *,
+    mode: Literal["split", "car_only", "bike_only"] = "split",
+    bike_share: float = 0.1,
+    is_auxiliary: bool = False,
+    normalize: bool = False,
+) -> OD:
+    """
+    Canonical ODPair conversion entrypoint used across demand/evaluation code.
+
+    mode
+    ----
+    - "split":    total_weight is split by `bike_share` and (1-bike_share)
+    - "car_only": all weight goes to car_weight
+    - "bike_only": all weight goes to bike_weight
+    """
+    if mode == "split" and not (0.0 <= bike_share <= 1.0):
+        raise ValueError("bike_share must be in [0, 1] when mode='split'.")
+
+    out: OD = []
+    for o, d, w in _iter_od_triples(od_data):
+        if mode == "split":
+            bike_w = w * bike_share
+            car_w = w * (1.0 - bike_share)
+        elif mode == "car_only":
+            bike_w = 0.0
+            car_w = w
+        elif mode == "bike_only":
+            bike_w = w
+            car_w = 0.0
+        else:
+            raise ValueError(f"Unknown mode '{mode}'.")
+
+        out.append(
+            ODPair(
+                origin=o,
+                destination=d,
+                bike_weight=float(bike_w),
+                car_weight=float(car_w),
+                is_auxiliary=is_auxiliary,
+            )
+        )
+
+    if normalize:
+        return normalize_od_pairs(out)
+    return out
+
+
+def scale_OD_pairs(ods_counts, bike_share: float = 0.1) -> list[ODPair]:
+    """
+    Backward-compatible helper for:
+      to_od_pairs(..., mode="split", normalize=True)
+    """
+    return to_od_pairs(
+        ods_counts,
+        mode="split",
+        bike_share=bike_share,
+        is_auxiliary=False,
+        normalize=True,
+    )
 
 
 def append_auxiliary_chain_od_pairs(

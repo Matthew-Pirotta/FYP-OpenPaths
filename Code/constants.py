@@ -46,6 +46,7 @@ PATIENCE = 3            # require weak bike gains for 3 evals in a row
 class ODPair(NamedTuple):
     origin: int
     destination: int
+    # Mode-specific OD demand multipliers used in objective/evaluation aggregation.
     bike_weight: float
     car_weight: float
     is_auxiliary: bool

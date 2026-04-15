@@ -15,7 +15,9 @@ from .ODGeneration import (
     gen_OD_trips,
     gen_od_trips_timeline,
     gen_random_OD_counter,
+    normalize_od_pairs,
     scale_OD_pairs,
+    to_od_pairs,
 )
 from .ODSampling import (
     infer_destination_type,
@@ -54,6 +56,8 @@ __all__ = [
     "gen_home_based_tour_counter",
     "gen_OD_trips",
     "gen_od_trips_timeline",
+    "to_od_pairs",
+    "normalize_od_pairs",
     "scale_OD_pairs",
     "append_auxiliary_chain_od_pairs",
     # Path helpers
