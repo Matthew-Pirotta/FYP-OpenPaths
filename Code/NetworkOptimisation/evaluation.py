@@ -1,4 +1,5 @@
 import random
+from concurrent.futures import ThreadPoolExecutor
 from networkx import MultiDiGraph, display
 from sympy import centroid
 import graph_util as graph_util
@@ -16,6 +17,7 @@ import nx_parallel
 SEED = 12
 
 
+#TODO this doesnt need to saty but whatev
 def _iter_od_triples(od_data):
     if isinstance(od_data, Mapping):
         rows = ((o, d, w) for (o, d), w in od_data.items())
@@ -37,6 +39,7 @@ def _iter_od_triples(od_data):
             ) from exc
         yield int(o), int(d), float(w)
 
+
 def largest_by_length(G):
     #NOTE strongly connected true since roads cycle infrastructure is directional
     components = (G.subgraph(c).copy() for c in nx.strongly_connected_components(G))
@@ -45,11 +48,14 @@ def largest_by_length(G):
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component 
 def calc_connectedness(G:MultiDiGraph, G_lcc:MultiDiGraph) -> dict:
     num_components = nx.number_strongly_connected_components(G)
+    total_length = float(sum(d.get("length", 0) for _, _, d in G.edges(data=True)))
     lcc_length = float(sum(d.get("length", 0) for _, _, d in G_lcc.edges(data=True)))
+    lcc_length_share = (lcc_length / total_length) if total_length > 0 else 0.0
 
     return {
         "num_components": num_components,
         "lcc_length": lcc_length,
+        "lcc_length_share": lcc_length_share,
     }
 
 
@@ -218,12 +224,28 @@ def _evaluate_structure_metrics( G_target: MultiDiGraph, k_sample=None, prefix: 
 
     return {f"{prefix}{k}": v for k, v in results.items()}
 
-def network_evaluation( G_bike_protected: MultiDiGraph, G_bike_full: MultiDiGraph, G_drive: MultiDiGraph,
-                       OD_pairs, k_sample=None,) -> dict:
+def network_evaluation(
+    G_bike_protected: MultiDiGraph,
+    G_bike_full: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    OD_pairs,
+    k_sample=None,
+    parallel_od_costs: bool = True,
+) -> dict:
 
     # Precompute OD costs once
-    drive_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
-    full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
+    if parallel_od_costs:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            drive_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "length")
+            full_bike_future = executor.submit(compute_od_costs, G_bike_full, OD_pairs, "bike_cost_penalty")
+            protected_bike_future = executor.submit(compute_od_costs, G_bike_protected, OD_pairs, "bike_cost_penalty")
+            drive_costs = drive_future.result()
+            full_bike_costs = full_bike_future.result()
+            protected_bike_costs = protected_bike_future.result()
+    else:
+        drive_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
+        full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
+        protected_bike_costs = compute_od_costs(G_bike_protected, OD_pairs, weight="bike_cost_penalty")
 
     # 1. Protected topology only
     protected_structure = _evaluate_structure_metrics(
@@ -233,14 +255,34 @@ def network_evaluation( G_bike_protected: MultiDiGraph, G_bike_full: MultiDiGrap
         include_union_geom=True,
     )
 
-    # 2. Full bike OD only
+    # 2. Main OD performance (Figure 1 metrics)
+    protected_directness = calc_directness_from_costs(protected_bike_costs, drive_costs, OD_pairs)
+    protected_bike_od = calc_total_cost_from_costs(protected_bike_costs, OD_pairs, cost_name="protected")
+    protected_total_demand = (
+        protected_bike_od["od_protected_cost_covered_demand"]
+        + protected_bike_od["od_protected_cost_missing_demand"]
+    )
+    protected_reachable_share = (
+        protected_bike_od["od_protected_cost_covered_demand"] / protected_total_demand
+        if protected_total_demand > 0
+        else 0.0
+    )
+    main_od = {
+        "main_od_directness_weighted": float(protected_directness["od_directness_mean"]),
+        "main_od_directness_num_pairs": int(protected_directness["od_directness_num_pairs"]),
+        "main_od_protected_reachable_share": float(protected_reachable_share),
+        "main_od_protected_reachable_demand": float(protected_bike_od["od_protected_cost_covered_demand"]),
+        "main_od_total_demand": float(protected_total_demand),
+    }
+
+    # 3. Full bike OD only (kept for baseline trade-off metrics)
     full_bike_od = {
         **calc_directness_from_costs(full_bike_costs, drive_costs, OD_pairs),
         **calc_total_cost_from_costs(full_bike_costs, OD_pairs, cost_name="bike"),
     }
     full_bike_od = {f"full_{k}": v for k, v in full_bike_od.items()}
 
-    # 3. Full car evaluation
+    # 4. Full car evaluation
     car_structure = _evaluate_structure_metrics(
         G_drive,
         k_sample=k_sample,
@@ -253,5 +295,6 @@ def network_evaluation( G_bike_protected: MultiDiGraph, G_bike_full: MultiDiGrap
 
     return {
         **protected_structure, **car_structure,
+        **main_od,
         **full_bike_od, **car_od,
     }
