@@ -86,10 +86,25 @@ def _should_stop(ev: dict, state: StopState) -> tuple[bool, str | None]:
 
     return False, None
 
-def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od,k_sample,diff_log: list,state: StopState,clear_diff: bool = False,) -> tuple[dict, StopState]:
+def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od,k_sample,diff_log: list,state: StopState,clear_diff:bool = False, dry_run:bool=False) -> tuple[dict, StopState]:
     """
     Build one evaluation snapshot for the current graph state.
     """
+    if dry_run:
+        # Return dummy data that keeps metrics safe
+        ev = {
+            "full_od_total_bike_cost": 0.0,
+            "car_od_total_car_cost": 0.0,
+            "locality": name,
+            "iteration": iteration,
+            "diff_log": list(diff_log),
+            "stop_reason": None,
+            "bike_gain_vs_baseline": 0.0,
+            "car_harm_vs_baseline": 0.0
+        }
+        if clear_diff: diff_log.clear()
+        return ev, state
+
     G_protected = graph_util.make_protected_subgraph(G_master)
     G_drive = graph_util.make_drive_subgraph(G_master)
     G_bike = graph_util.make_bikeable_subgraph(G_master)
@@ -145,7 +160,7 @@ def _select_edge(
     )
 
 def run_locality_task(args):
-    name, G_sub, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD = args
+    name, G_sub, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD, dry_run = args
 
     print(f"🏙️ Starting {name} in process")
     G_working = copy.deepcopy(G_sub)
@@ -170,6 +185,7 @@ def run_locality_task(args):
         diff_log=event_log,
         state=state,
         clear_diff=False,
+        dry_run=dry_run,
     )
     evaluations.append(ev)
 
@@ -247,6 +263,7 @@ def run_locality_task(args):
                 diff_log=event_log,
                 state=state,
                 clear_diff=True,
+                dry_run=dry_run,
             )
             stop, reason = _should_stop(ev, state)
 
@@ -269,18 +286,19 @@ def run_locality_task(args):
             diff_log=event_log,
             state=state,
             clear_diff=False,
+            dry_run=dry_run,
         )
         evaluations.append(ev)
 
     return G_working, evaluations
 
-def run_global(G_master, heuristic_func:Callable, od, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, max_workers=None, parallel=True):
+def run_global(G_master, heuristic_func:Callable, od, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, dry_run:bool=False, max_workers=None, parallel=True):
     """Run heuristic on all subgraphs in parallel."""
     
     if not subgraphs:
         subgraphs = {"MASTER": G_master}
 
-    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD)
+    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD, dry_run)
              for name, G_sub_master in subgraphs.items()]
     evaluations = []
     graphs = dict()

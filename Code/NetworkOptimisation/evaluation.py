@@ -42,7 +42,7 @@ def _iter_od_triples(od_data):
 
 def largest_by_length(G):
     #NOTE strongly connected true since roads cycle infrastructure is directional
-    components = (G.subgraph(c).copy() for c in nx.strongly_connected_components(G))
+    components = (G.subgraph(c).copy() for c in nx.weakly_connected_components(G))
     return max(components, key=lambda H: sum(d.get("length",0) for _,_,d in H.edges(data=True)))
 
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component 

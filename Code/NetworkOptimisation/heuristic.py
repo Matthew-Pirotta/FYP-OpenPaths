@@ -157,6 +157,7 @@ def heuristic_edge_betweenness_centrality(
     print(max_between_cent_edge)    
     return max_between_cent_edge
 
+#TODO remove this function
 def heuristic_edge_closeness_centrality(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -223,6 +224,7 @@ def _find_closest_component(G:MultiDiGraph, main_component:set, other_components
 
 def _select_bridge_edge(G: MultiDiGraph, comp_a: set, path: list) -> tuple:
     """Find the first edge that leaves component A."""
+    #TODO and check that the edge is reallocatable
     for i in range(len(path) - 1):
         if path[i] in comp_a and path[i + 1] not in comp_a:
             return (path[i], path[i + 1], 0)
@@ -258,14 +260,25 @@ def heuristic_L2S(
     if G_protected.number_of_edges() < 3:
         return fallback_edge(G_bikeable,G_realloc)
 
-    comps = sorted(nx.strongly_connected_components(G_protected), key=len, reverse=True)
+    comps = sorted(nx.weakly_connected_components(G_protected), key=len, reverse=True)
     #print(f"the comps are: {comps}")
     if len(comps) < 2:
         print("Already connected")
         return None
     
-    #NOTE it is done through G_drive, as the bike network may be disconnected
-    edge_to_reallocate = _connect_components(G_drive, comps[0], comps[1], "L2S") 
+    #TODO
+    #I want to use Realloc so that the path is fullybuildable but 1.Roundabouts are not reallocatable, 2. the edges in the componenets aren't reallocatable but this is fixable by just temp adding them or something
+    #G_bikeable is good because it avoids stuff like tunnels. Possible problem is that bike network may be disconnected
+    #G_drive does not containg the protected cycle components
+
+    #I think my main problem is that if the path isnt connenctable for some reason the system wont recover and will try to path the same route. Consider the case where it is bikeable but not realloacatble the route.
+
+    #I could either make use of and filter on a certain tag
+    #Or have some sort of retry code/fallback
+
+    #I need to account for 2 components not being connectable and trying a different component?
+    #
+    edge_to_reallocate = _connect_components(G_master, comps[0], comps[1], "L2S") 
     return edge_to_reallocate
 
 def heuristic_L2C(

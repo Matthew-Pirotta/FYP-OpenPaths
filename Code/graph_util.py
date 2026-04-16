@@ -103,6 +103,8 @@ def _create_bike_edge(G, u, v, base_data):
     # Add as a new parallel edge
     new_key = G.add_edge(u, v, **new_data)
 
+    impedance_calculator.update_bike_costs(G, [(u,v,new_key)])
+
     return (u, v, new_key)
 
 def _has_dedicated_bike_edge(G, u, v):
