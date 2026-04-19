@@ -175,6 +175,7 @@ def summarise_road_type_stats(G):
         "tunnel": "Tunnel counts",
         "junction": "Juntion type counts",
         "turns": "turn type counts",
+        "oneway": "Oneway or twoway"
     }
     
     # Initialize counters for each category

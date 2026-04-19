@@ -8,3 +8,10 @@ Lit review
 
 data
 - cost of building roads / special infrastructure
+
+
+----
+changes to osm
+- street to had dingli
+- Vjal Ragusa added lane count of 2
+- Triq Wied il-Għajn zejtun

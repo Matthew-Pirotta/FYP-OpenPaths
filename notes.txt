@@ -43,6 +43,13 @@ MultiDiGraphs are nonplanar directed graphs with possible self-loops and paralle
 
 Also if there are multiple lanes in same direction there will be a lanes attribute.
 
+“if the path is NOT one-way, reverse direction of each edge and add this path going the opposite direction too” (https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py)
+Because OSMnx copies the way attributes into both directed edge additions, both directions can end up carrying lanes=1 as metadata. That does not mean the road has one lane in each direction; it means the original OSM way had lanes=1, and OSMnx attached that same way-level tag to both directed representations. Although if there is something like 4lanes, they should be split evenly between edges, allegdly.
+If my understanding is correct, if lanes are None, but road is tagged as two way, then osmnx will create edges in both directions but without a lanes attribute.
+TODO: SO AM I DOUBLE COUNTING LANES????
+
+ox.settings.all_oneway = True, sets all roads as one way immediatly, and thus messes up roads which are tagged as two way and consquently dfoes not create the reverse edge.Note that some internal edge attribute is still retained but the actual edge is not created. https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py#L762#
+NOTE that this intepretion in brakcets is wrong (#TODO NOTE forces the graph to have seperate edges for each direction )
 -------
 Edge attributes:
 

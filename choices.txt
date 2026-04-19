@@ -143,3 +143,14 @@ Final choice:
 - node_close_cent will leave as pure topological
 ----
 speed was not used in custom edge weighting
+---
+
+Weakly connected vs Strongly connected 
+
+Argument for strongly connected is that roads should be reachable from either direction. However there are some deadend roads. In addition to havving some error in the mapping which leads to some sections being not strongly reachable when in reality they should. These humans errors could be fixed by me but there is no gurantee. So in the end some edges might be lost.
+
+Argument for weakly connected is that the graph works as is. However is methodologically weaker, as when edges are being reallocated i am only checking for weakly connected and thus could cos a lot of deadends, which is not ideal.
+
+Moreover many papers refer to the network must remain connected, but never specify weakly or strongly. But wiedmann does specifically mention strongly connected as a requirement.
+
+Could make the maintain the SCC strongly, and the rest weakly? but feels a bit ehhh 
