@@ -20,7 +20,7 @@ def plot_metrics(df):
         ax.plot(x, df[col] * scale, label=label, color=color, linewidth=2, linestyle=linestyle)
 
     # Figure 1: Main OD performance
-    fig1, axs1 = plt.subplots(1, 2, figsize=(12, 4.5))
+    fig1, axs1 = plt.subplots(1, 3, figsize=(12, 4.5))
     fig1.suptitle("Figure 1: Main OD performance", fontsize=13, fontweight="bold")
 
     directness_col = _pick("main_od_directness_weighted", "full_od_directness_mean")
@@ -47,6 +47,25 @@ def plot_metrics(df):
     axs1[1].grid(alpha=0.3)
     if reachable_share_col:
         axs1[1].legend(fontsize=8)
+
+    full_od_directness_col = _pick("full_od_directness_mean")
+    _plot_if_exists(
+        axs1[1],
+        full_od_directness_col,
+        label="Bikeable reachable demand share",
+        color="tab:blue",
+        scale=100.0,
+    )
+    axs1[1].set_title("Share of demand reachable on bikeable network")
+    axs1[1].set_xlabel("Iteration")
+    axs1[1].set_ylabel("Reachable demand (%)")
+    axs1[1].yaxis.set_major_formatter(mticker.PercentFormatter())
+    axs1[1].grid(alpha=0.3)
+    if full_od_directness_col:
+        axs1[1].legend(fontsize=8)
+
+
+    
 
     fig1.tight_layout()
 

@@ -165,6 +165,10 @@ def run_locality_task(args):
     print(f"🏙️ Starting {name} in process")
     G_working = copy.deepcopy(G_sub)
 
+    segment_inventory = graph_util.build_segment_inventory(G_working)
+    arc_to_seg, seg_to_arcs = graph_util.build_arc_to_segment_map(G_working)
+    graph_util.refresh_segment_reallocatable_flags(G_working, segment_inventory, seg_to_arcs)
+
     evaluations = []
     event_log = []
     sig = inspect.signature(heuristic_func)
@@ -175,7 +179,6 @@ def run_locality_task(args):
     car_paths = None
     beta = 1.0
 
-    # Initial evaluation
     ev, state = _evaluate_current_state(
         G_working,
         name=name,
@@ -200,7 +203,7 @@ def run_locality_task(args):
         G_protected = graph_util.make_protected_subgraph(G_working)
 
         if G_realloc.number_of_edges() == 0:
-            print(f"🚫 No reallocatable edges left for {name}, stopping early at iteration {i}")
+            print(f"🚫 No reallocatable segments left for {name}, stopping early at iteration {i}")
             break
 
         if "bike_paths" in sig.parameters and "car_paths" in sig.parameters:
@@ -216,7 +219,15 @@ def run_locality_task(args):
                     path_weight_metric="length",
                 )
 
-        edge_to_reallocate = _select_edge(
+        # --- new: build arc_scores for keep_arc decisions ---
+        bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths) if bike_paths is not None else {}
+        car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths) if car_paths is not None else {}
+
+        arc_scores = {}
+        for arc in set(bike_edge_importance) | set(car_edge_importance):
+            arc_scores[arc] = bike_edge_importance.get(arc, 0.0) - beta * car_edge_importance.get(arc, 0.0)
+
+        segment_to_reallocate = _select_edge(
             heuristic_func,
             sig,
             G_working,
@@ -230,28 +241,57 @@ def run_locality_task(args):
             k_sample,
         )
 
-        if edge_to_reallocate is None:
-            print(f"🚫 No more valid edges left to reallocate for {name}")
+        if segment_to_reallocate is None:
+            print(f"🚫 No more valid segments left to reallocate for {name}")
             break
 
-        if graph_util.check_edge_reallocateability(G_drive, edge_to_reallocate):
-            created_edges = graph_util.reallocate_edge_dedicated(G_working, edge_to_reallocate)
+        # --- new: choose keep_arc only when needed ---
+        remaining_after = segment_inventory[segment_to_reallocate]["lanes_remaining"] - 1
+        is_oneway = graph_util._segment_is_oneway(G_working, segment_to_reallocate, seg_to_arcs)
+
+        keep_arc = None
+        if (not is_oneway) and remaining_after == 1:
+            keep_arc = graph_util.choose_keep_arc_for_segment(
+                segment_to_reallocate,
+                seg_to_arcs,
+                arc_scores,
+                G_working,
+            )
+
+        if graph_util.check_segment_reallocatable(
+            G_drive,
+            segment_to_reallocate,
+            segment_inventory,
+            seg_to_arcs,
+            arc_scores,
+        ):
+            created_edges = graph_util.reallocate_segment_dedicated(
+                G_working,
+                segment_to_reallocate,
+                segment_inventory,
+                seg_to_arcs,
+                keep_arc=keep_arc,
+            )
             event_log.append({
                 "iteration": i,
-                "event_type": "reallocated",
-                "edge": edge_to_reallocate,
+                "event_type": "reallocated_segment",
+                "segment": segment_to_reallocate,
+                "keep_arc": keep_arc,
                 "created_edges": created_edges,
             })
         else:
-            u, v, k = edge_to_reallocate
-            G_working[u][v][k]["reallocatable"] = False
+            for u, v, k in seg_to_arcs[segment_to_reallocate]:
+                G_working[u][v][k]["reallocatable"] = False
+
+            graph_util.refresh_segment_reallocatable_flags(G_working, segment_inventory, seg_to_arcs)
+
             event_log.append({
                 "iteration": i,
-                "event_type": "marked_not_reallocatable",
-                "edge": edge_to_reallocate,
+                "event_type": "marked_segment_not_reallocatable",
+                "segment": segment_to_reallocate,
+                "keep_arc": keep_arc,
                 "created_edges": None,
             })
-            print(f"edge {edge_to_reallocate} is not reallocatable")
 
         if i % EVALUATION_MOD == 0:
             ev, state = _evaluate_current_state(
@@ -275,7 +315,6 @@ def run_locality_task(args):
 
             evaluations.append(ev)
 
-    # Final evaluation only if we do not already have one for the final state
     if evaluations[-1]["iteration"] != last_iteration:
         ev, state = _evaluate_current_state(
             G_working,

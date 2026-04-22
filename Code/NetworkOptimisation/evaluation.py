@@ -247,6 +247,35 @@ def network_evaluation(
         full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
         protected_bike_costs = compute_od_costs(G_bike_protected, OD_pairs, weight="bike_cost_penalty")
 
+    all_od = [(o, d, w) for o, d, w in _iter_od_triples(OD_pairs) if w > 0 and o != d]
+
+    drive_nodes = set(G_drive.nodes())
+    bike_nodes = set(G_bike_full.nodes())
+    prot_nodes = set(G_bike_protected.nodes())
+
+    missing_drive_endpoint = sum(
+        1 for o, d, _ in all_od if o not in drive_nodes or d not in drive_nodes
+    )
+    missing_bike_endpoint = sum(
+        1 for o, d, _ in all_od if o not in bike_nodes or d not in bike_nodes
+    )
+    missing_prot_endpoint = sum(
+        1 for o, d, _ in all_od if o not in prot_nodes or d not in prot_nodes
+    )
+
+    common_full = set(full_bike_costs) & set(drive_costs)
+    common_prot = set(protected_bike_costs) & set(drive_costs)
+
+    print("OD total:", len(all_od))
+    print("drive reachable:", len(drive_costs))
+    print("full bike reachable:", len(full_bike_costs))
+    print("protected bike reachable:", len(protected_bike_costs))
+    print("common full-bike/directness pairs:", len(common_full))
+    print("common protected/directness pairs:", len(common_prot))
+    print("missing drive endpoints:", missing_drive_endpoint)
+    print("missing full-bike endpoints:", missing_bike_endpoint)
+    print("missing protected endpoints:", missing_prot_endpoint)
+
     # 1. Protected topology only
     protected_structure = _evaluate_structure_metrics(
         G_bike_protected,

@@ -1,3 +1,4 @@
+#TODO pass Gu instead of rebuilding it multiple times.
 from networkx import MultiDiGraph
 import networkx as nx
 import osmnx as ox
@@ -55,21 +56,52 @@ def _filter_edges(G:MultiDiGraph, condition) -> MultiDiGraph:
 #endregion
 
 #region reallocation
-def check_edge_reallocateability(G_drive:MultiDiGraph, edge_id) -> bool:
-    """Updates the reallocatable attribute in place"""
-    # Work on a shallow copy (just edge structure)
-    u,v,k = edge_id
-    d = G_drive[u][v][k]
-    car_lanes = d.get("car_lanes")
-    #Reachability is not affected if a lane is removed
-    if car_lanes >= 2:
-        return True
+def _segment_is_oneway(
+    G: MultiDiGraph,
+    seg_id,
+    seg_to_arcs: dict,
+) -> bool:
+    arcs = seg_to_arcs[seg_id]
 
+    for u, v, k in arcs:
+        d = G[u][v][k]
+        if d.get("highway") == "cycleway":
+            continue
+        return d.get("oneway", True)
+
+    return True
+
+
+def check_segment_reallocatable(
+    G_drive: MultiDiGraph,
+    seg_id,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+    arc_scores: dict,
+) -> bool:
     G_test = copy.deepcopy(G_drive)
-    G_test.remove_edge(u, v, k)
-    stays_connected = nx.is_weakly_connected(G_test)
 
-    return stays_connected
+    total = segment_inventory[seg_id]["lanes_remaining"]
+    if total <= 0:
+        return False
+
+    remaining_total = total - 1
+    is_oneway = _segment_is_oneway(G_test, seg_id, seg_to_arcs)
+
+    keep_arc = None
+    if (not is_oneway) and remaining_total == 1:
+        keep_arc = choose_keep_arc_for_segment(seg_id, seg_to_arcs, arc_scores, G_test)
+
+    _apply_segment_capacity_to_arcs(
+        G_test,
+        seg_id,
+        seg_to_arcs=seg_to_arcs,
+        remaining_total=remaining_total,
+        keep_arc=keep_arc,
+    )
+
+    G_drive_test = make_drive_subgraph(G_test)
+    return G_drive_test.number_of_edges() > 0 and nx.is_weakly_connected(G_drive_test)
 
 
 def _create_bike_edge(G, u, v, base_data):
@@ -116,53 +148,145 @@ def _has_dedicated_bike_edge(G, u, v):
             return True
     return False
 
-def reallocate_edge_dedicated(G: MultiDiGraph, edge_id: tuple,) -> list[tuple]:
+def reallocate_segment_dedicated(
+    G: MultiDiGraph,
+    seg_id,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+    keep_arc: tuple | None = None,
+) -> list[tuple]:
     """
-    Create dedicated bike edges instead of modifying existing ones. Changes are made inplace.
+    Reallocate one authoritative car lane from a segment.
+    If the segment becomes one-lane two-way, keep_arc determines which direction survives for cars.
     """
-    u, v, k = edge_id
-    d = G[u][v][k]
-    reallocated: list[tuple] = []
+    created_edges = []
+    arcs = seg_to_arcs[seg_id]
 
-    car_lanes = d.get("car_lanes", 1) - 1
-    d["car_lanes"] = max(0, car_lanes)
-    if d["car_lanes"] == 0:
-        d["car_allowed"] = False
-    d["reallocatable"] = False
+    old_total = segment_inventory[seg_id]["lanes_remaining"]
+    new_total = max(0, old_total - 1)
+    segment_inventory[seg_id]["lanes_remaining"] = new_total
 
-    reverse_edges = G.get_edge_data(v, u)
-    reverse_template = None
-    if reverse_edges:
-        reverse_template = reverse_edges.get(k)
-        if reverse_template is None:
-            for edge_data in reverse_edges.values():
-                if edge_data.get("highway") != "cycleway":
-                    reverse_template = edge_data
-                    break
-            if reverse_template is None:
-                reverse_template = next(iter(reverse_edges.values()))
-        reverse_template["reallocatable"] = False
+    _apply_segment_capacity_to_arcs(
+        G,
+        seg_id,
+        seg_to_arcs=seg_to_arcs,
+        remaining_total=new_total,
+        keep_arc=keep_arc,
+    )
 
-    if not _has_dedicated_bike_edge(G, u, v):
-        new_edge = _create_bike_edge(G, u, v, d)
-        reallocated.append(new_edge)
+    for u, v, k in arcs:
+        d = G[u][v][k]
+        if d.get("highway") == "cycleway":
+            continue
+        if not _has_dedicated_bike_edge(G, u, v):
+            created_edges.append(_create_bike_edge(G, u, v, d))
 
-    if not _has_dedicated_bike_edge(G, v, u):
-        if reverse_template is None:
-            d_rev = dict(d)
-            if "grade" in d_rev:
-                d_rev["grade"] = -d_rev["grade"]
-            geometry = d_rev.get("geometry")
-            if geometry is not None and hasattr(geometry, "coords"):
-                d_rev["geometry"] = LineString(geometry.coords[::-1])
-        else:
-            d_rev = reverse_template
+    refresh_segment_reallocatable_flags(G, segment_inventory, seg_to_arcs)
+    return created_edges
 
-        new_edge_rev = _create_bike_edge(G, v, u, d_rev)
-        reallocated.append(new_edge_rev)
+def _apply_segment_capacity_to_arcs(
+    G: MultiDiGraph,
+    seg_id,
+    seg_to_arcs: dict,
+    remaining_total: int | float,
+    keep_arc: tuple | None = None,
+):
+    arcs = seg_to_arcs[seg_id]
 
-    return reallocated
+    drive_arcs = [
+        (u, v, k)
+        for (u, v, k) in arcs
+        if G[u][v][k].get("highway") != "cycleway"
+    ]
 
+    if not drive_arcs:
+        return
+
+    # representative arc per direction
+    dir_to_arc = {arc[:2]: arc for arc in drive_arcs}
+    unique_arcs = list(dir_to_arc.values())
+
+    is_oneway = _segment_is_oneway(G, seg_id, seg_to_arcs)
+
+    # -------------------------
+    # ONEWAY SEGMENT
+    # -------------------------
+    if is_oneway:
+        # choose one representative driving arc
+        # if multiple parallel one-way arcs exist, you may later want finer handling
+        u, v, k = unique_arcs[0]
+
+        G[u][v][k]["car_lanes"] = max(remaining_total, 0)
+        G[u][v][k]["car_allowed"] = remaining_total > 0
+        G[u][v][k]["reallocatable"] = remaining_total > 0
+
+        # any other parallel same-direction arcs:
+        for uu, vv, kk in unique_arcs[1:]:
+            G[uu][vv][kk]["car_lanes"] = max(remaining_total, 0)
+            G[uu][vv][kk]["car_allowed"] = remaining_total > 0
+            G[uu][vv][kk]["reallocatable"] = remaining_total > 0
+
+        return
+
+    # -------------------------
+    # TWOWAY SEGMENT
+    # -------------------------
+    if remaining_total >= 2:
+        for u, v, k in unique_arcs:
+            G[u][v][k]["car_lanes"] = remaining_total
+            G[u][v][k]["car_allowed"] = True
+            G[u][v][k]["reallocatable"] = True
+        return
+
+    if remaining_total == 1:
+        if keep_arc is None:
+            raise ValueError(
+                f"keep_arc is required when two-way segment {seg_id} is reduced to one remaining car lane"
+            )
+
+        keep_dir = keep_arc[:2]
+        for u, v, k in unique_arcs:
+            keep = (u, v) == keep_dir
+            G[u][v][k]["car_lanes"] = 1 if keep else 0
+            G[u][v][k]["car_allowed"] = keep
+            G[u][v][k]["reallocatable"] = keep
+        return
+
+    # remaining_total == 0
+    for u, v, k in unique_arcs:
+        G[u][v][k]["car_lanes"] = 0
+        G[u][v][k]["car_allowed"] = False
+        G[u][v][k]["reallocatable"] = False
+
+def choose_keep_arc_for_segment(
+    seg_id,
+    seg_to_arcs: dict,
+    arc_scores: dict,
+    G: MultiDiGraph,
+) -> tuple | None:
+    """
+    For a two-way segment with only 1 remaining car lane, choose which directed arc to keep.
+    """
+    if _segment_is_oneway(G, seg_id, seg_to_arcs):
+        return None
+
+    arcs = seg_to_arcs[seg_id]
+
+    drive_arcs = [
+        arc for arc in arcs
+        if G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
+    ]
+
+    if not drive_arcs:
+        return None
+
+    dir_to_arc = {arc[:2]: arc for arc in drive_arcs}
+    unique_arcs = list(dir_to_arc.values())
+
+    if len(unique_arcs) == 1:
+        return unique_arcs[0]
+
+    return max(unique_arcs, key=lambda arc: arc_scores.get(arc, float("-inf")))
 
 #endregion
 
@@ -200,167 +324,144 @@ def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) ->
     data[attribute_name] = value
     return G
 
-
-#TODO check if i want to keep the deep copy or not
-def recombine_subgraphs_into_master(
-    G_master: MultiDiGraph,
-    subgraphs: dict[str, MultiDiGraph],
-) -> MultiDiGraph:
+#region new segment logic
+def build_segment_inventory(G_directed: MultiDiGraph) -> dict:
     """
-    Recombine locality subgraphs back into a master graph.
-
-    Rule:
-      - If an edge is reallocated in at least one subgraph,
-        it is reallocated in the master graph.
-      - Reallocation is monotonic and irreversible.
-    """
-
-    G_new = copy.deepcopy(G_master)
-
-    # Helper: detect whether an edge is reallocated
-    def is_reallocated(d):
-        return (
-            d.get("infra_type") == "fietsstraat"
-            or d.get("safety") == SafetyClass.PAINTED
-            or d.get("safety") == SafetyClass.PROTECTED
-        )
-
-    # Iterate over all subgraphs
-    for loc_name, G_sub in subgraphs.items():
-        for u, v, k, d_sub in G_sub.edges(keys=True, data=True):
-
-            d_master = G_new[u][v][k]
-
-            # If subgraph edge is reallocated and master is not yet
-            if is_reallocated(d_sub) and not is_reallocated(d_master):
-                # Apply reallocation in master
-                # IMPORTANT: call the same canonical logic
-                reallocate_edge_dedicated(G_new, (u, v, k))
-
-    return G_new
-
-
-#region simpligfied and unsimplified mapping
-def apply_reallocation_to_unsimplified(G_simplified: MultiDiGraph,G_unsimplified: MultiDiGraph,reallocated_edges: list[tuple],) -> MultiDiGraph:
-    """
-    Projects reallocations from simplified graph onto unsimplified graph.
-    """
-
-    G_processed_unsimplified = copy.deepcopy(G_unsimplified)
-
-    processed = set()
-    for u, v, k in reallocated_edges:
-        d_s = G_simplified[u][v][k]
-
-        merged = d_s.get("merged_edges", [])
-        if not merged:
-            continue
-
-        for (u0, v0) in merged:
-
-            # avoid double application
-            if (u0, v0) in processed:
-                continue
-            processed.add((u0, v0))
-        
-            edge_id_unsimplified = (u0, v0, 0)
-            reallocate_edge_dedicated(G_processed_unsimplified, edge_id_unsimplified)
-
-    return G_processed_unsimplified
-            
-#endregion
-
-#region segment logic
-# Applying steet segment level reallocation logic to formulation
-# u,v and v,u are combined
-def build_segment_arc_map(G:MultiDiGraph):
-    """
-    Groups directed edges into undirected segments.
-
-    :param G: A NetworkX MultiDiGraph.
-    :return: Dict mapping (min_node, max_node, key) to a list of (u, v, key) edges.
-    """
-    seg_to_arcs = defaultdict(list)
-
-    for u, v, k in G.edges(keys=True):
-        seg = (min(u, v), max(u, v), 0)
-        seg_to_arcs[seg].append((u, v, k))
-    return seg_to_arcs
-
-
-def build_segment_coef(G,G_sub_reallocatable, eligible_edges, paths_bike, paths_car, gamma: float):
-    """
-    Build per-edge objective coefficients for the solver. The benefit and harm of edges are summed into their segements, as the solver will reallocate them in one go.
-
-    coef[seg] = bike_benefit[e] - gamma * car_harm[e]
-
-    Parameters
-    ----------
-    G : MultiDiGraph
-        Authoritative graph (current state).
-    G_sub_reallocatable : MultiDiGraph
-        Sub graph which is filtered on teallocatable edges.
-    eligible_edges : set[(u,v,k)]
-        Edges allowed to be reallocated this iteration.
-    paths_bike : dict[(o,d,w) -> list[node]]
-        Current shortest bike paths.
-    paths_car : dict[(o,d,w) -> list[node]]
-        Current shortest car paths.
-    gamma : float
-        Weight of car harm relative to bike benefit.
+    Build authoritative segment inventory from OSMnx undirected graph.
 
     Returns
     -------
-    dict[(u,v,k) -> float]
-        Objective coefficient per eligible edge.
+    dict[seg_id -> dict]
+        seg_id is (u, v, k) in undirected graph space.
+        Each entry contains authoritative physical lane supply and metadata.
     """
+    Gu = ox.convert.to_undirected(G_directed)
 
-    seg_to_arcs = build_segment_arc_map(G_sub_reallocatable)  
-    arc_to_seg = {arc: seg for seg, arcs in seg_to_arcs.items() for arc in arcs}
+    inventory = {}
+    for u, v, k, d in Gu.edges(keys=True, data=True):
+        
+        lanes = d.get("lanes", 1)
+
+        inventory[(u, v, k)] = {
+            "lanes_total": lanes,
+            "lanes_remaining": lanes,
+            "geometry": d.get("geometry"),
+            "osmid": d.get("osmid"),
+            "highway": d.get("highway"),
+        }
+    return inventory
 
 
+#TODO idk if i should keep the hex key, i.e. maintain a multiGraph or just a graph
+# should I keep (min(u, v), max(u, v), 0)?
+def _canonical_geometry_key(data):
+    """
+    Return a direction-invariant geometry key.
+    Assumes every edge has valid geometry.
+    """
+    geom = data["geometry"]
+    coords = list(geom.coords)
+
+    forward = tuple(coords)
+    backward = tuple(reversed(coords))
+
+    # make A->B and B->A map to same key
+    return min(forward, backward)
+
+
+def build_arc_to_segment_map(G_directed: MultiDiGraph) -> tuple[dict, dict]:
+    """
+    Map each directed arc to exactly one authoritative undirected segment.
+
+    Returns
+    -------
+    arc_to_seg : dict[(u,v,k) -> seg_id]
+    seg_to_arcs : dict[seg_id -> list[(u,v,k)]]
+    """
+    Gu = ox.convert.to_undirected(G_directed)
+
+    undirected_lookup = {}
+    for u, v, k, d in Gu.edges(keys=True, data=True):
+        node_pair = tuple(sorted((u, v)))
+        geom_key = _canonical_geometry_key(d)
+        undirected_lookup[(node_pair, geom_key)] = (u, v, k)
+
+    arc_to_seg = {}
+    seg_to_arcs = defaultdict(list)
+
+    for u, v, k, d in G_directed.edges(keys=True, data=True):
+        node_pair = tuple(sorted((u, v)))
+        geom_key = _canonical_geometry_key(d)
+
+        seg_id = undirected_lookup.get((node_pair, geom_key))
+        if seg_id is None:
+            raise KeyError(
+                f"Could not map directed edge {(u, v, k)} "
+                f"with node_pair={node_pair}"
+            )
+
+        arc_to_seg[(u, v, k)] = seg_id
+        seg_to_arcs[seg_id].append((u, v, k))
+
+    return arc_to_seg, seg_to_arcs
+
+def refresh_segment_reallocatable_flags(G: MultiDiGraph, segment_inventory: dict, seg_to_arcs: dict):
+    """
+    Keep directed graph reallocatable flags synchronized with authoritative segment supply.
+    """
+    for seg_id, arcs in seg_to_arcs.items():
+        remaining = segment_inventory[seg_id]["lanes_remaining"]
+        can_reallocate = remaining > 0
+
+        for u, v, k in arcs:
+            d = G[u][v][k]
+            if d.get("highway") == "cycleway":
+                d["reallocatable"] = False
+            else:
+                d["reallocatable"] = bool(d.get("car_allowed", False) and can_reallocate)
+
+
+#endregion
+
+#region segment logic
+def build_segment_coef(
+    G,
+    eligible_segments,
+    seg_to_arcs,
+    arc_to_seg,
+    paths_bike,
+    paths_car,
+    gamma: float,
+):
     bike_benefit_seg = defaultdict(float)
     car_harm_seg = defaultdict(float)
 
-
-    # --- Bike benefit aggregation ---
     for (o, d, w), path in paths_bike.items():
         for u, v in zip(path[:-1], path[1:]):
-            e = (u, v, 0)
-            seg = arc_to_seg.get(e)
-            if seg not in seg_to_arcs: 
-                continue
- 
-            edge = G[u][v][0]
-            # Δb​(e)=bike cost before upgrade − bike cost after upgrade
-            delta_bike = (edge["bike_cost_penalty"] - edge["bike_cost_base"])
-            bike_benefit_seg[seg] += w * delta_bike
+            candidate_arcs = [(u, v, k) for k in G[u][v].keys()] if G.has_edge(u, v) else []
+            for arc in candidate_arcs:
+                seg = arc_to_seg.get(arc)
+                if seg not in eligible_segments:
+                    continue
+                edge = G[arc[0]][arc[1]][arc[2]]
+                delta_bike = edge["bike_cost_penalty"] - edge["bike_cost_base"]
+                bike_benefit_seg[seg] += w * delta_bike
 
-    # --- Car harm aggregation ---
     for (o, d, w), path in paths_car.items():
         for u, v in zip(path[:-1], path[1:]):
-            e = (u, v, 0)
-            seg = arc_to_seg.get(e)
-            if seg not in seg_to_arcs: 
-                continue
+            candidate_arcs = [(u, v, k) for k in G[u][v].keys()] if G.has_edge(u, v) else []
+            for arc in candidate_arcs:
+                seg = arc_to_seg.get(arc)
+                if seg not in eligible_segments:
+                    continue
+                edge = G[arc[0]][arc[1]][arc[2]]
+                delta_car = edge["car_cost_if_fietsstraat"] - edge["car_cost_current"]
+                car_harm_seg[seg] += w * delta_car
 
-            edge = G[u][v][0]
-            # Δc​(e)=car cost after upgrade − car cost before upgrade
-            delta_car = (edge["car_cost_if_fietsstraat"] - edge["car_cost_current"])
-            car_harm_seg[seg] += w * delta_car
-
-    # --- Combine ---
-    """
-    If coef[e] > 0: upgrading is beneficial overall
-    If coef[e] < 0: car harm outweighs bike benefit
-    gamma controls how much you care about car harm relative to bike benefit
-    """
     coef_seg = {}
-    for seg, arcs in seg_to_arcs.items():
-        # This explicitly calculates the balance for every eligible segment
-        benefit = bike_benefit_seg[seg]
-        harm = car_harm_seg[seg]
-        coef_seg[seg] = benefit - (gamma * harm)
+    for seg in eligible_segments:
+        coef_seg[seg] = bike_benefit_seg[seg] - gamma * car_harm_seg[seg]
 
     return coef_seg, bike_benefit_seg, car_harm_seg
 #endregion
+

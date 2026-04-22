@@ -10,9 +10,18 @@ from shapely.geometry import Point
 from shapely.ops import unary_union
 from Demand import paths_util
 import nx_parallel
+from collections import defaultdict
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
+
+
+def get_candidate_segments(G_realloc: MultiDiGraph):
+    arc_to_seg, seg_to_arcs = graph_util.build_arc_to_segment_map(G_realloc)
+    candidate_segments = list(seg_to_arcs.keys())
+    return candidate_segments, arc_to_seg, seg_to_arcs
+
+
 
 # TODO NOTE (i.e write in writeup) routing model differs cars route on one graph with one cost function, bikes route on another graph with bike_cost_penalty, network connectivity and route concentration can differ a lot.
 # That means one mode can naturally produce more dispersed flows or more concentrated flows, So a bike importance value of 50 and a car importance value of 50 do not necessarily mean equal strategic importance.
@@ -88,7 +97,7 @@ def build_balanced_edge_scores(
     return scores
 
 #TODO is this just flow?
-def heuristic_od_edge_betweenness(
+def heuristic_od_segment_betweenness(
     G_working: MultiDiGraph,
     G_drive: MultiDiGraph,
     G_bikeable: MultiDiGraph,
@@ -98,64 +107,58 @@ def heuristic_od_edge_betweenness(
     car_paths,
     beta: float = 1.0,
 ):
-    """
-    Select the reallocatable edge with the best balanced score.
-
-    Notes
-    -----
-    - Bike importance is computed from shortest bike paths using bike_cost_penalty.
-    - Car importance is computed from shortest car paths using length.
-    - Importances are normalized only over currently reallocatable edges,
-      since the decision is made only among that feasible set.
-    """
-    reallocatable_edges = list(G_realloc.edges(keys=True))
-    if not reallocatable_edges:
+    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(G_realloc)
+    if not candidate_segments:
         return None
 
-    bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths,)
-    car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths,)
+    bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths)
+    car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths)
 
-    realloc_scores = build_balanced_edge_scores(
-        candidate_edges=reallocatable_edges,
-        bike_edge_importance=bike_edge_importance,
-        car_edge_importance=car_edge_importance,
-        gamma=beta,
-    )
+    seg_scores = {}
+    for seg_id, arcs in seg_to_arcs.items():
+        bike_score = sum(bike_edge_importance.get(arc, 0.0) for arc in arcs)
+        car_score = sum(car_edge_importance.get(arc, 0.0) for arc in arcs)
+        seg_scores[seg_id] = bike_score - beta * car_score
 
-    if not realloc_scores:
-        return None
+    best_edge = max(seg_scores, key=seg_scores.get)
 
-    best_edge = max(realloc_scores, key=realloc_scores.get)
     return best_edge
 
 
 #region topological heuristics
-def heuristic_edge_betweenness_centrality(
-        G_master:MultiDiGraph,
-        G_drive:MultiDiGraph,
-        G_bikeable:MultiDiGraph,
-        G_realloc:MultiDiGraph,
-        G_protected:MultiDiGraph,
-        k_sample=None, seed=SEED) -> tuple:
-    
-    reallocatable_edges = set(G_realloc.edges(keys=True))
+def heuristic_segment_betweenness_centrality(
+    G_master: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    G_protected: MultiDiGraph,
+    k_sample=None,
+    seed=SEED
+):
+    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(G_realloc)
+    if not candidate_segments:
+        return None
 
     if k_sample is not None:
-        k_sample = min(G_bikeable.number_of_nodes(),k_sample) #ensure we dont sample more nodes than exist
+        k_sample = min(G_bikeable.number_of_nodes(), k_sample)
 
-    edges_between_cent = nx.edge_betweenness_centrality(G_bikeable, weight="bike_cost_penalty", normalized=True, k=k_sample, seed=seed, backend="parallel")
+    edges_between_cent = nx.edge_betweenness_centrality(
+        G_bikeable,
+        weight="bike_cost_penalty",
+        normalized=True,
+        k=k_sample,
+        seed=seed,
+        backend="parallel"
+    )
 
-    reallocatable_edges_between_cent = {k: v for k, v in edges_between_cent.items() if k in reallocatable_edges}
-    #Some sort of intersection on the edge_between centrality
+    seg_scores = defaultdict(float)
+    for arc, score in edges_between_cent.items():
+        seg = arc_to_seg.get(arc)
+        if seg in seg_to_arcs:
+            seg_scores[seg] += score
 
-    #print(f"edges_between_cent: {edges_between_cent}")
-    #print(f"reallocatable_edges:  {reallocatable_edges}")
-    #print(f"G_reallocatable.number_of_edges() IN DA FUNCTION: {G_realloc.number_of_edges()}")
-    #print(f"reallocatable_edges_between_cent: {reallocatable_edges_between_cent}")
-
-    max_between_cent_edge = max(reallocatable_edges_between_cent, key=reallocatable_edges_between_cent.get)
-    print(max_between_cent_edge)    
-    return max_between_cent_edge
+    max_between_cent_seg = max(seg_scores, key=seg_scores.get) if seg_scores else None
+    return max_between_cent_seg
 
 #TODO remove this function
 def heuristic_edge_closeness_centrality(
@@ -222,13 +225,17 @@ def _find_closest_component(G:MultiDiGraph, main_component:set, other_components
     
     return closest_component, min_dist
 
-def _select_bridge_edge(G: MultiDiGraph, comp_a: set, path: list) -> tuple:
+def _select_bridge_segment(G: MultiDiGraph, comp_a: set, path: list, arc_to_seg: dict):
     """Find the first edge that leaves component A."""
-    #TODO and check that the edge is reallocatable
     for i in range(len(path) - 1):
         if path[i] in comp_a and path[i + 1] not in comp_a:
-            return (path[i], path[i + 1], 0)
-    return (path[0], path[1], 0)
+            u, v = path[i], path[i + 1]
+            candidate_arcs = [(u, v, k) for k in G[u][v].keys()] if G.has_edge(u, v) else []
+            for arc in candidate_arcs:
+                seg = arc_to_seg.get(arc)
+                if seg is not None:
+                    return seg
+    return None
 
 def _connect_components(G: MultiDiGraph, source_comp: set, target_comp: set, label: str):
     path, cost = _find_bridge_path(G, source_comp, target_comp)
@@ -236,17 +243,16 @@ def _connect_components(G: MultiDiGraph, source_comp: set, target_comp: set, lab
         print(f"[{label}] No bridge path found.")
         return None
     #print(f"[{label}] Best path: {path}, cost={cost:.2f}")
-    edge = _select_bridge_edge(G, source_comp, path)
-    return edge
+    seg = _select_bridge_segment(G, source_comp, path)
+    return seg
 
 def fallback_edge(G_bikeable, G_realloc):
     """fallback_if_protected_empty, using edge betweenness centrality"""
     # Fallback: pick highest-betweenness reallocatable edge
     #TODO hard coded k_sample
-    edge = heuristic_edge_betweenness_centrality(None,None,G_bikeable,G_realloc,None, k_sample=50)
-    #TODO handle if none?
-    print(f"fallback found edge {edge}")
-    return edge
+    seg = heuristic_segment_betweenness_centrality(
+            None, None, G_bikeable, G_realloc, None, k_sample=50)
+    return seg
 
 def heuristic_L2S(
         G_master:MultiDiGraph,

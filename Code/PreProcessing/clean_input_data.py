@@ -275,7 +275,7 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
             attrs["bike_lanes"] = 0
             attrs["car_lanes"] = 0
             
-            attrs["geometry"] = d["geometry"].reverse()
+            attrs["geometry"] = d["geometry"]
             #attrs["grade"] = -d["grade"]
             
             # Set specific bike-safety attributes
@@ -302,6 +302,10 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
 
 #region others
 
+#Although sumo internally checks for roundabouts as oneway during graph creation https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py#L783#
+# This is only being used internally and not being set within the edge, <- NVM not true it actually is being set L850, but actually it wasnt being set when running the sumo sim cos of the settings.all_oneway
+# BUt if i need any of this depends if i keep sumo
+# TODO set the default oneway value to true?
 def set_roundabouts_oneway(G:MultiDiGraph):
     """This is done to prevent a lane being counterflow in roundabouts during the sumo simulation"""
     for u, v, k, d in G.edges(keys=True, data=True):

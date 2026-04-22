@@ -82,7 +82,7 @@ def plot_parallel_edges(G):
     edge_colors = [cmap(norm(v)) for v in vals]
 
     fig, ax = ox.plot.plot_graph(
-        G, node_size=0, edge_color=edge_colors, edge_linewidth=0.6, show=False, close=False
+        G, node_size=0, edge_color=edge_colors, edge_linewidth=0.6, show=False, close=False, figsize=(20,20)
     )
     sm = cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
