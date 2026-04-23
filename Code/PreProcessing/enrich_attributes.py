@@ -184,8 +184,9 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
             d["reallocatable"] = False
             counters["roundabouts"] += 1
 
-        #Dont touch busy roads, too imp for cars and not plesant to cycle along even seperated
-        elif d.get("highway") in {"trunk", "primary"}:
+        #Dont touch relativly safe roads
+        #TODO service?
+        elif d.get("highway") in {"track", "residential"}:
             d["reallocatable"] = False
             counters["highway type"] += 1
         
@@ -193,6 +194,7 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
         elif d.get("car_lanes", 0) <= 0:
             d["reallocatable"] = False
             counters["no_car_lanes"] += 1
+        
 
         # Can only reallocate where biking is allowed (i.e. not tunnels/highways)
         #TODO NOTE this is temp reomced, as i am now allowing main roads?

@@ -101,7 +101,7 @@ def check_segment_reallocatable(
     )
 
     G_drive_test = make_drive_subgraph(G_test)
-    return G_drive_test.number_of_edges() > 0 and nx.is_weakly_connected(G_drive_test)
+    return G_drive_test.number_of_edges() > 0 and nx.is_strongly_connected(G_drive_test)
 
 
 def _create_bike_edge(G, u, v, base_data):

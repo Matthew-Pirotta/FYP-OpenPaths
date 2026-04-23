@@ -51,6 +51,7 @@ def load_network(location, simplify) -> MultiDiGraph:
         #TODO the graph should be strongly connected, but i remember testing that car network get super disconnected and u need many edges to fully connect it
         #Most papers just say 'connected' without specifying strong or weak, but wiedmann explicity states strongly.
         G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
+        G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         
         G_master = __create_master_graph(G_bike, G_drive)
         

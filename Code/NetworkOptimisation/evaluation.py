@@ -12,6 +12,7 @@ from shapely.ops import unary_union
 from collections.abc import Mapping
 from Demand import paths_util
 import nx_parallel
+import constants
 
 #TODO THIS SHOULD BE IN THE MAIN CLASS?
 SEED = 12
@@ -42,7 +43,7 @@ def _iter_od_triples(od_data):
 
 def largest_by_length(G):
     #NOTE strongly connected true since roads cycle infrastructure is directional
-    components = (G.subgraph(c).copy() for c in nx.weakly_connected_components(G))
+    components = (G.subgraph(c).copy() for c in nx.strongly_connected_components(G))
     return max(components, key=lambda H: sum(d.get("length",0) for _,_,d in H.edges(data=True)))
 
 # Connectedness - describing whether the network forms a single, navigable system or remains fragmented into multiple component 
@@ -172,11 +173,18 @@ def calc_coverage(G, buffer_m=500):
         "union_geom": union_geom  # useful for debugging/plotting
     }
 
-def calc_total_cost_from_costs(costs_dict: dict, OD_list, cost_name: str = "bike",) -> dict:
-    total_cost = 0.0
+def calc_total_cost_from_costs(
+    costs_dict: dict,
+    OD_list,
+    cost_name: str = "bike",
+    unrouted_trip_penalty: float = constants.UNROUTED_TRIP_PENALTY_COST,
+) -> dict:
+    routed_total_cost = 0.0
+    unrouted_penalty_total = 0.0
     covered_demand = 0.0
     missing_demand = 0.0
     num_pairs = 0
+    penalty_per_trip = max(0.0, float(unrouted_trip_penalty))
 
     for o, d, w in _iter_od_triples(OD_list):
         if w <= 0 or o == d:
@@ -185,20 +193,28 @@ def calc_total_cost_from_costs(costs_dict: dict, OD_list, cost_name: str = "bike
         c_val = costs_dict.get((o, d))
         if c_val is None or c_val < 0:
             missing_demand += w
+            unrouted_penalty_total += w * penalty_per_trip
             continue
 
-        total_cost += w * c_val
+        routed_total_cost += w * c_val
         covered_demand += w
         num_pairs += 1
 
-    mean_cost = total_cost / covered_demand if covered_demand > 0 else 0.0
+    total_cost = routed_total_cost + unrouted_penalty_total
+    total_demand = covered_demand + missing_demand
+    mean_cost = total_cost / total_demand if total_demand > 0 else 0.0
+    mean_routed_only_cost = routed_total_cost / covered_demand if covered_demand > 0 else 0.0
 
     return {
         f"od_total_{cost_name}_cost": float(total_cost),
+        f"od_total_{cost_name}_cost_routed_only": float(routed_total_cost),
+        f"od_total_{cost_name}_cost_unrouted_penalty": float(unrouted_penalty_total),
         f"od_mean_{cost_name}_cost": float(mean_cost),
+        f"od_mean_{cost_name}_cost_routed_only": float(mean_routed_only_cost),
         f"od_{cost_name}_cost_covered_demand": float(covered_demand),
         f"od_{cost_name}_cost_missing_demand": float(missing_demand),
         f"od_{cost_name}_cost_num_pairs": int(num_pairs),
+        f"od_{cost_name}_cost_unrouted_penalty_per_trip": float(penalty_per_trip),
     }
 
 
@@ -231,6 +247,7 @@ def network_evaluation(
     OD_pairs,
     k_sample=None,
     parallel_od_costs: bool = True,
+    unrouted_trip_penalty: float = constants.UNROUTED_TRIP_PENALTY_COST,
 ) -> dict:
 
     # Precompute OD costs once
@@ -285,8 +302,14 @@ def network_evaluation(
     )
 
     # 2. Main OD performance (Figure 1 metrics)
-    protected_directness = calc_directness_from_costs(protected_bike_costs, drive_costs, OD_pairs)
-    protected_bike_od = calc_total_cost_from_costs(protected_bike_costs, OD_pairs, cost_name="protected")
+    # Directness is evaluated on the full bikeable network.
+    full_bike_directness = calc_directness_from_costs(full_bike_costs, drive_costs, OD_pairs)
+    protected_bike_od = calc_total_cost_from_costs(
+        protected_bike_costs,
+        OD_pairs,
+        cost_name="protected",
+        unrouted_trip_penalty=unrouted_trip_penalty,
+    )
     protected_total_demand = (
         protected_bike_od["od_protected_cost_covered_demand"]
         + protected_bike_od["od_protected_cost_missing_demand"]
@@ -297,8 +320,8 @@ def network_evaluation(
         else 0.0
     )
     main_od = {
-        "main_od_directness_weighted": float(protected_directness["od_directness_mean"]),
-        "main_od_directness_num_pairs": int(protected_directness["od_directness_num_pairs"]),
+        "main_od_directness_weighted": float(full_bike_directness["od_directness_mean"]),
+        "main_od_directness_num_pairs": int(full_bike_directness["od_directness_num_pairs"]),
         "main_od_protected_reachable_share": float(protected_reachable_share),
         "main_od_protected_reachable_demand": float(protected_bike_od["od_protected_cost_covered_demand"]),
         "main_od_total_demand": float(protected_total_demand),
@@ -306,8 +329,13 @@ def network_evaluation(
 
     # 3. Full bike OD only (kept for baseline trade-off metrics)
     full_bike_od = {
-        **calc_directness_from_costs(full_bike_costs, drive_costs, OD_pairs),
-        **calc_total_cost_from_costs(full_bike_costs, OD_pairs, cost_name="bike"),
+        **full_bike_directness,
+        **calc_total_cost_from_costs(
+            full_bike_costs,
+            OD_pairs,
+            cost_name="bike",
+            unrouted_trip_penalty=unrouted_trip_penalty,
+        ),
     }
     full_bike_od = {f"full_{k}": v for k, v in full_bike_od.items()}
 
@@ -319,7 +347,12 @@ def network_evaluation(
         include_union_geom=False,
     )
 
-    car_od = calc_total_cost_from_costs(drive_costs, OD_pairs, cost_name="car")
+    car_od = calc_total_cost_from_costs(
+        drive_costs,
+        OD_pairs,
+        cost_name="car",
+        unrouted_trip_penalty=unrouted_trip_penalty,
+    )
     car_od = {f"car_{k}": v for k, v in car_od.items()}
 
     return {
