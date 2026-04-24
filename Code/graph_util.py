@@ -64,6 +64,8 @@ def _segment_is_oneway(
     arcs = seg_to_arcs[seg_id]
 
     for u, v, k in arcs:
+        if not G.has_edge(u, v, k):
+            continue
         d = G[u][v][k]
         if d.get("highway") == "cycleway":
             continue
@@ -73,24 +75,23 @@ def _segment_is_oneway(
 
 
 def check_segment_reallocatable(
-    G_drive: MultiDiGraph,
+    G: MultiDiGraph,
     seg_id,
     segment_inventory: dict,
     seg_to_arcs: dict,
-    arc_scores: dict,
+    keep_arc: tuple | None = None,
 ) -> bool:
-    G_test = copy.deepcopy(G_drive)
+    G_test = copy.deepcopy(G)
 
     total = segment_inventory[seg_id]["lanes_remaining"]
-    if total <= 0:
+    if total <= 0 or not segment_inventory[seg_id].get("reallocatable", True):
         return False
 
     remaining_total = total - 1
     is_oneway = _segment_is_oneway(G_test, seg_id, seg_to_arcs)
 
-    keep_arc = None
-    if (not is_oneway) and remaining_total == 1:
-        keep_arc = choose_keep_arc_for_segment(seg_id, seg_to_arcs, arc_scores, G_test)
+    if (not is_oneway) and remaining_total == 1 and keep_arc is None:
+        keep_arc = choose_first_keep_arc_for_segment(seg_id, seg_to_arcs, G_test)
 
     _apply_segment_capacity_to_arcs(
         G_test,
@@ -102,7 +103,6 @@ def check_segment_reallocatable(
 
     G_drive_test = make_drive_subgraph(G_test)
     return G_drive_test.number_of_edges() > 0 and nx.is_strongly_connected(G_drive_test)
-
 
 def _create_bike_edge(G, u, v, base_data):
     """
@@ -196,7 +196,7 @@ def _apply_segment_capacity_to_arcs(
     drive_arcs = [
         (u, v, k)
         for (u, v, k) in arcs
-        if G[u][v][k].get("highway") != "cycleway"
+        if G.has_edge(u, v, k) and G[u][v][k].get("highway") != "cycleway"
     ]
 
     if not drive_arcs:
@@ -274,7 +274,7 @@ def choose_keep_arc_for_segment(
 
     drive_arcs = [
         arc for arc in arcs
-        if G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
+        if G.has_edge(*arc) and G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
     ]
 
     if not drive_arcs:
@@ -287,6 +287,35 @@ def choose_keep_arc_for_segment(
         return unique_arcs[0]
 
     return max(unique_arcs, key=lambda arc: arc_scores.get(arc, float("-inf")))
+
+def choose_first_keep_arc_for_segment(
+    seg_id,
+    seg_to_arcs: dict,
+    G: MultiDiGraph,
+) -> tuple | None:
+    """
+    Deterministic baseline rule:
+    for a two-way segment reduced to one remaining car lane,
+    keep the first available drive arc.
+    """
+    if _segment_is_oneway(G, seg_id, seg_to_arcs):
+        return None
+
+    arcs = seg_to_arcs[seg_id]
+
+    drive_arcs = [
+        arc for arc in arcs
+        if G.has_edge(*arc) and G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
+    ]
+    if not drive_arcs:
+        return None
+
+    dir_to_arc = {}
+    for arc in drive_arcs:
+        dir_to_arc.setdefault(arc[:2], arc)
+
+    unique_arcs = sorted(dir_to_arc.values(), key=lambda a: (a[0], a[1], a[2]))
+    return unique_arcs[0]
 
 #endregion
 
@@ -325,6 +354,14 @@ def set_edge_attribute(G:MultiDiGraph, edge:tuple, attribute_name:str, value) ->
     return G
 
 #region new segment logic
+def _as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
 def build_segment_inventory(G_directed: MultiDiGraph) -> dict:
     """
     Build authoritative segment inventory from OSMnx undirected graph.
@@ -345,6 +382,7 @@ def build_segment_inventory(G_directed: MultiDiGraph) -> dict:
         inventory[(u, v, k)] = {
             "lanes_total": lanes,
             "lanes_remaining": lanes,
+            "reallocatable": _as_bool(d.get("reallocatable", False)),
             "geometry": d.get("geometry"),
             "osmid": d.get("osmid"),
             "highway": d.get("highway"),
@@ -411,9 +449,11 @@ def refresh_segment_reallocatable_flags(G: MultiDiGraph, segment_inventory: dict
     """
     for seg_id, arcs in seg_to_arcs.items():
         remaining = segment_inventory[seg_id]["lanes_remaining"]
-        can_reallocate = remaining > 0
+        can_reallocate = remaining > 0 and segment_inventory[seg_id].get("reallocatable", True)
 
         for u, v, k in arcs:
+            if not G.has_edge(u, v, k):
+                continue
             d = G[u][v][k]
             if d.get("highway") == "cycleway":
                 d["reallocatable"] = False

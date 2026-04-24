@@ -252,15 +252,18 @@ def network_evaluation(
 
     # Precompute OD costs once
     if parallel_od_costs:
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            drive_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "length")
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            drive_length_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "length")
+            car_cost_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "car_cost_current")
             full_bike_future = executor.submit(compute_od_costs, G_bike_full, OD_pairs, "bike_cost_penalty")
             protected_bike_future = executor.submit(compute_od_costs, G_bike_protected, OD_pairs, "bike_cost_penalty")
-            drive_costs = drive_future.result()
+            drive_length_costs = drive_length_future.result()
+            car_costs = car_cost_future.result()
             full_bike_costs = full_bike_future.result()
             protected_bike_costs = protected_bike_future.result()
     else:
-        drive_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
+        drive_length_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
+        car_costs = compute_od_costs(G_drive, OD_pairs, weight="car_cost_current")
         full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
         protected_bike_costs = compute_od_costs(G_bike_protected, OD_pairs, weight="bike_cost_penalty")
 
@@ -280,11 +283,11 @@ def network_evaluation(
         1 for o, d, _ in all_od if o not in prot_nodes or d not in prot_nodes
     )
 
-    common_full = set(full_bike_costs) & set(drive_costs)
-    common_prot = set(protected_bike_costs) & set(drive_costs)
+    common_full = set(full_bike_costs) & set(drive_length_costs)
+    common_prot = set(protected_bike_costs) & set(drive_length_costs)
 
     print("OD total:", len(all_od))
-    print("drive reachable:", len(drive_costs))
+    print("drive reachable:", len(drive_length_costs))
     print("full bike reachable:", len(full_bike_costs))
     print("protected bike reachable:", len(protected_bike_costs))
     print("common full-bike/directness pairs:", len(common_full))
@@ -303,7 +306,7 @@ def network_evaluation(
 
     # 2. Main OD performance (Figure 1 metrics)
     # Directness is evaluated on the full bikeable network.
-    full_bike_directness = calc_directness_from_costs(full_bike_costs, drive_costs, OD_pairs)
+    full_bike_directness = calc_directness_from_costs(full_bike_costs, drive_length_costs, OD_pairs)
     protected_bike_od = calc_total_cost_from_costs(
         protected_bike_costs,
         OD_pairs,
@@ -348,7 +351,7 @@ def network_evaluation(
     )
 
     car_od = calc_total_cost_from_costs(
-        drive_costs,
+        car_costs,
         OD_pairs,
         cost_name="car",
         unrouted_trip_penalty=unrouted_trip_penalty,

@@ -16,11 +16,22 @@ from collections import defaultdict
 SEED = 12
 
 
-def get_candidate_segments(G_realloc: MultiDiGraph):
-    arc_to_seg, seg_to_arcs = graph_util.build_arc_to_segment_map(G_realloc)
-    candidate_segments = list(seg_to_arcs.keys())
-    return candidate_segments, arc_to_seg, seg_to_arcs
+def get_candidate_segments(
+    G_realloc: MultiDiGraph,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+):
+    # Fallback for old call sites
+    if arc_to_seg is None or seg_to_arcs is None:
+        arc_to_seg, seg_to_arcs = graph_util.build_arc_to_segment_map(G_realloc)
+        return list(seg_to_arcs.keys()), arc_to_seg, seg_to_arcs
 
+    candidate_segments = [
+        seg_id
+        for seg_id, arcs in seg_to_arcs.items()
+        if any(G_realloc.has_edge(u, v, k) for u, v, k in arcs)
+    ]
+    return candidate_segments, arc_to_seg, seg_to_arcs
 
 
 # TODO NOTE (i.e write in writeup) routing model differs cars route on one graph with one cost function, bikes route on another graph with bike_cost_penalty, network connectivity and route concentration can differ a lot.
@@ -106,23 +117,32 @@ def heuristic_od_segment_betweenness(
     bike_paths,
     car_paths,
     beta: float = 1.0,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+    bike_edge_importance: dict | None = None,
+    car_edge_importance: dict | None = None,
 ):
-    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(G_realloc)
+    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+        G_realloc,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     if not candidate_segments:
         return None
 
-    bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths)
-    car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths)
+    if bike_edge_importance is None:
+        bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths)
+    if car_edge_importance is None:
+        car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths)
 
     seg_scores = {}
-    for seg_id, arcs in seg_to_arcs.items():
+    for seg_id in candidate_segments:
+        arcs = seg_to_arcs[seg_id]
         bike_score = sum(bike_edge_importance.get(arc, 0.0) for arc in arcs)
         car_score = sum(car_edge_importance.get(arc, 0.0) for arc in arcs)
         seg_scores[seg_id] = bike_score - beta * car_score
 
-    best_edge = max(seg_scores, key=seg_scores.get)
-
-    return best_edge
+    return max(seg_scores, key=seg_scores.get)
 
 
 #region topological heuristics
@@ -133,28 +153,37 @@ def heuristic_segment_betweenness_centrality(
     G_realloc: MultiDiGraph,
     G_protected: MultiDiGraph,
     k_sample=None,
-    seed=SEED
+    seed=SEED,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+    edge_betweenness_scores: dict | None = None,
 ):
-    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(G_realloc)
+    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+        G_realloc,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     if not candidate_segments:
         return None
 
     if k_sample is not None:
         k_sample = min(G_bikeable.number_of_nodes(), k_sample)
 
-    edges_between_cent = nx.edge_betweenness_centrality(
-        G_bikeable,
-        weight="bike_cost_penalty",
-        normalized=True,
-        k=k_sample,
-        seed=seed,
-        backend="parallel"
-    )
+    if edge_betweenness_scores is None:
+        edge_betweenness_scores = nx.edge_betweenness_centrality(
+            G_bikeable,
+            weight="bike_cost_penalty",
+            normalized=True,
+            k=k_sample,
+            seed=seed,
+            backend="parallel",
+        )
 
     seg_scores = defaultdict(float)
-    for arc, score in edges_between_cent.items():
+    candidate_set = set(candidate_segments)
+    for arc, score in edge_betweenness_scores.items():
         seg = arc_to_seg.get(arc)
-        if seg in seg_to_arcs:
+        if seg in candidate_set:
             seg_scores[seg] += score
 
     max_between_cent_seg = max(seg_scores, key=seg_scores.get) if seg_scores else None
@@ -188,21 +217,32 @@ def heuristic_edge_closeness_centrality(
     return best_edge
 #endregion
 
-def heuristic_random(G_master: MultiDiGraph, G_drive: MultiDiGraph, G_bikeable: MultiDiGraph, G_realloc: MultiDiGraph, G_protected:MultiDiGraph,) -> tuple:
-    #TODO set seed?
-
-    edges = list(G_realloc.edges)
-    random_edge = random.choice(edges)
-    return random_edge
+def heuristic_random(
+    G_master: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    G_protected: MultiDiGraph,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+):
+    candidate_segments, _, _ = get_candidate_segments(
+        G_realloc,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
+    if not candidate_segments:
+        return None
+    return random.choice(candidate_segments)
 
 #region Component Heuristics
-def _find_bridge_path(G_drive:MultiDiGraph, comp_a:set, comp_b:set) -> tuple[list,float]:
+def _find_bridge_path(G_master:MultiDiGraph, comp_a:set, comp_b:set) -> tuple[list,float]:
     best_path, best_cost = None, float("inf")
     for a in comp_a:
         for b in comp_b:
             try:
-                path = nx.shortest_path(G_drive, a, b, weight="length")
-                cost = nx.path_weight(G_drive, path, weight="length")
+                path = nx.shortest_path(G_master, a, b, weight="length")
+                cost = nx.path_weight(G_master, path, weight="length")
                 #print(f"trying {path}, for a cost of {cost}")
                 if cost < best_cost:
                     best_cost, best_path = cost, path
@@ -225,25 +265,69 @@ def _find_closest_component(G:MultiDiGraph, main_component:set, other_components
     
     return closest_component, min_dist
 
-def _select_bridge_segment(G: MultiDiGraph, comp_a: set, path: list, arc_to_seg: dict):
-    """Find the first edge that leaves component A."""
-    for i in range(len(path) - 1):
-        if path[i] in comp_a and path[i + 1] not in comp_a:
-            u, v = path[i], path[i + 1]
-            candidate_arcs = [(u, v, k) for k in G[u][v].keys()] if G.has_edge(u, v) else []
-            for arc in candidate_arcs:
-                seg = arc_to_seg.get(arc)
-                if seg is not None:
-                    return seg
-    return None
+def _select_bridge_segment(
+    G_master: MultiDiGraph,
+    path: list,
+    candidate_segments: set,
+    arc_to_seg: dict,
+    source_comp: set,
+    target_comp: set,
+):
+    """
+    Pick the first reallocatable segment on the bridge path that is outside both
+    selected components. If none exists, fall back to the first reallocatable
+    segment on the path.
+    """
+    component_nodes = set(source_comp) | set(target_comp)
+    first_reallocatable = None
 
-def _connect_components(G: MultiDiGraph, source_comp: set, target_comp: set, label: str):
-    path, cost = _find_bridge_path(G, source_comp, target_comp)
+    for i in range(len(path) - 1):
+        u, v = path[i], path[i + 1]
+        candidate_arcs = [(u, v, k) for k in G_master[u][v].keys()] if G_master.has_edge(u, v) else []
+        for arc in candidate_arcs:
+            seg = arc_to_seg.get(arc)
+            if seg is None or seg not in candidate_segments:
+                continue
+
+            if first_reallocatable is None:
+                first_reallocatable = seg
+
+            if u not in component_nodes and v not in component_nodes:
+                return seg
+    return first_reallocatable
+
+def _connect_components(
+    G_master: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    source_comp: set,
+    target_comp: set,
+    label: str,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+):
+    path, cost = _find_bridge_path(G_master, source_comp, target_comp)
     if not path or len(path) < 2:
         print(f"[{label}] No bridge path found.")
         return None
     #print(f"[{label}] Best path: {path}, cost={cost:.2f}")
-    seg = _select_bridge_segment(G, source_comp, path)
+
+    candidate_segments, arc_to_seg, _ = get_candidate_segments(
+        G_realloc,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
+    if not candidate_segments:
+        print(f"[{label}] No reallocatable segments available.")
+        return None
+
+    seg = _select_bridge_segment(
+        G_master,
+        path,
+        set(candidate_segments),
+        arc_to_seg,
+        source_comp,
+        target_comp,
+    )
     return seg
 
 def fallback_edge(G_bikeable, G_realloc):
@@ -259,7 +343,9 @@ def heuristic_L2S(
         G_drive:MultiDiGraph,
         G_bikeable:MultiDiGraph,
         G_realloc:MultiDiGraph,
-        G_protected:MultiDiGraph,) -> tuple:
+        G_protected:MultiDiGraph,
+        arc_to_seg: dict | None = None,
+        seg_to_arcs: dict | None = None,) -> tuple:
     """Largest-to-Second: Connects the two largest components."""
 
     #print(f"G_protected.number_of_edges(): {G_protected.number_of_edges()}, cond:{G_protected.number_of_edges() < 2}" )
@@ -284,7 +370,15 @@ def heuristic_L2S(
 
     #I need to account for 2 components not being connectable and trying a different component?
     #
-    edge_to_reallocate = _connect_components(G_master, comps[0], comps[1], "L2S") 
+    edge_to_reallocate = _connect_components(
+        G_master,
+        G_realloc,
+        comps[0],
+        comps[1],
+        "L2S",
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     return edge_to_reallocate
 
 def heuristic_L2C(
@@ -292,7 +386,9 @@ def heuristic_L2C(
         G_drive:MultiDiGraph,
         G_bikeable:MultiDiGraph,
         G_realloc:MultiDiGraph,
-        G_protected:MultiDiGraph,):
+        G_protected:MultiDiGraph,
+        arc_to_seg: dict | None = None,
+        seg_to_arcs: dict | None = None,):
     
     if G_protected.number_of_edges() < 3:
         return fallback_edge(G_bikeable,G_realloc)
@@ -307,7 +403,15 @@ def heuristic_L2C(
 
     closest_component, _ = _find_closest_component(G_bikeable, largest, others)
 
-    edge_to_reallocate = _connect_components(G_drive, largest,closest_component, "L2C")
+    edge_to_reallocate = _connect_components(
+        G_master,
+        G_realloc,
+        largest,
+        closest_component,
+        "L2C",
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     return edge_to_reallocate
 
 def heuristic_R2C(
@@ -315,7 +419,9 @@ def heuristic_R2C(
         G_drive:MultiDiGraph,
         G_bikeable:MultiDiGraph,
         G_realloc:MultiDiGraph,
-        G_protected:MultiDiGraph,):
+        G_protected:MultiDiGraph,
+        arc_to_seg: dict | None = None,
+        seg_to_arcs: dict | None = None,):
     
     if G_protected.number_of_edges() < 3:
         return fallback_edge(G_bikeable,G_realloc)
@@ -332,7 +438,15 @@ def heuristic_R2C(
 
     closest_component, _ = _find_closest_component(G_bikeable, random_component, other_components)
 
-    edge_to_reallocate = _connect_components(G_drive, random_component,closest_component, "R2C")
+    edge_to_reallocate = _connect_components(
+        G_master,
+        G_realloc,
+        random_component,
+        closest_component,
+        "R2C",
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     return edge_to_reallocate
 
 def heuristic_CC(
@@ -340,7 +454,9 @@ def heuristic_CC(
         G_drive:MultiDiGraph,
         G_bikeable:MultiDiGraph,
         G_realloc:MultiDiGraph,
-        G_protected:MultiDiGraph,):
+        G_protected:MultiDiGraph,
+        arc_to_seg: dict | None = None,
+        seg_to_arcs: dict | None = None,):
     
     if G_protected.number_of_edges() < 3:
         return fallback_edge(G_bikeable,G_realloc)
@@ -361,7 +477,15 @@ def heuristic_CC(
                 best_pair = (comp, closest_component)
 
     comp_a, comp_b = best_pair
-    edge_to_reallocate = _connect_components(G_drive, comp_a, comp_b, "CC")
+    edge_to_reallocate = _connect_components(
+        G_master,
+        G_realloc,
+        comp_a,
+        comp_b,
+        "CC",
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
     return edge_to_reallocate
 
 def _calc_network_centroid(G:MultiDiGraph, nodes:set)-> np.ndarray:
