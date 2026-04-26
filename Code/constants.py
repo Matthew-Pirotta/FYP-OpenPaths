@@ -45,7 +45,7 @@ PATIENCE = 5            # require weak bike gains for 3 evals in a row
 # Evaluation penalty applied per trip when an OD pair cannot be routed.
 # Units follow the evaluated weight attribute (e.g., meters for car length,
 # seconds for bike impedance when using bike_cost_penalty).
-UNROUTED_TRIP_PENALTY_COST = 15_000.0
+UNROUTED_TRIP_PENALTY_COST = 25_000.0
 
 
 Arc = tuple[int, int, int]

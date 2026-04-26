@@ -1,4 +1,6 @@
 #TODO pass Gu instead of rebuilding it multiple times.
+import random
+from dataclasses import dataclass
 from networkx import MultiDiGraph
 import networkx as nx
 import osmnx as ox
@@ -12,6 +14,18 @@ from PreProcessing import enrich_attributes
 from typing import Literal
 from NetworkOptimisation import impedance_calculator
 from shapely.geometry import LineString
+
+KeepArcPolicy = Literal["first", "random", "score"]
+
+
+@dataclass(frozen=True)
+class SegmentReallocationAction:
+    seg_id: tuple
+    keep_arc: tuple | None
+    remaining_after: int | float
+    bike_arcs: tuple[tuple, ...]
+    lost_car_arcs: tuple[tuple, ...]
+
 
 # region Subgraph generators
 def make_drive_subgraph(G:MultiDiGraph) -> MultiDiGraph:
@@ -74,6 +88,217 @@ def _segment_is_oneway(
     return True
 
 
+def get_segment_drive_arcs(
+    G: MultiDiGraph,
+    seg_id,
+    seg_to_arcs: dict,
+) -> list[tuple]:
+    """
+    Return one representative non-cycleway drive arc per direction.
+
+    Segment actions operate on directions, not duplicate parallel edge keys.
+    """
+    drive_arcs = []
+    seen_dirs = set()
+
+    for u, v, k in seg_to_arcs[seg_id]:
+        if not G.has_edge(u, v, k):
+            continue
+        d = G[u][v][k]
+        if d.get("highway") == "cycleway":
+            continue
+
+        direction = (u, v)
+        if direction in seen_dirs:
+            continue
+
+        seen_dirs.add(direction)
+        drive_arcs.append((u, v, k))
+
+    return drive_arcs
+
+
+def get_segment_remaining_after_reallocation(segment_inventory: dict, seg_id) -> int | float:
+    return max(0, segment_inventory[seg_id]["lanes_remaining"] - 1)
+
+
+def segment_needs_keep_arc(
+    G: MultiDiGraph,
+    seg_id,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+) -> bool:
+    return (
+        not _segment_is_oneway(G, seg_id, seg_to_arcs)
+        and get_segment_remaining_after_reallocation(segment_inventory, seg_id) == 1
+        and bool(get_segment_drive_arcs(G, seg_id, seg_to_arcs))
+    )
+
+
+def choose_keep_arc_for_policy(
+    seg_id,
+    seg_to_arcs: dict,
+    G: MultiDiGraph,
+    policy: KeepArcPolicy = "first",
+    arc_scores: dict | None = None,
+    rng=None,
+) -> tuple | None:
+    """
+    Choose the car direction to keep for a two-way segment reduced to one lane.
+    """
+    if _segment_is_oneway(G, seg_id, seg_to_arcs):
+        return None
+
+    unique_arcs = sorted(
+        get_segment_drive_arcs(G, seg_id, seg_to_arcs),
+        key=lambda arc: (arc[0], arc[1], arc[2]),
+    )
+
+    if not unique_arcs:
+        return None
+    if len(unique_arcs) == 1:
+        return unique_arcs[0]
+
+    if policy == "first":
+        return unique_arcs[0]
+
+    if policy == "random":
+        random_source = rng if rng is not None else random
+        return random_source.choice(unique_arcs)
+
+    if policy == "score":
+        arc_scores = arc_scores or {}
+        best_score = max(arc_scores.get(arc, float("-inf")) for arc in unique_arcs)
+        for arc in unique_arcs:
+            if arc_scores.get(arc, float("-inf")) == best_score:
+                return arc
+
+    raise ValueError(f"Unknown keep-arc policy: {policy}")
+
+
+def get_segment_lost_car_arcs_for_reallocation(
+    G: MultiDiGraph,
+    seg_id,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+    keep_arc: tuple | None = None,
+) -> list[tuple]:
+    """
+    Return the car arcs/directions disabled by the next reallocation action.
+
+    This evaluates the consequence of the supplied action; it does not choose
+    random-vs-score-vs-first behavior itself.
+    """
+    total = segment_inventory[seg_id]["lanes_remaining"]
+    if total <= 0:
+        return []
+
+    remaining_after = get_segment_remaining_after_reallocation(segment_inventory, seg_id)
+    current_car_arcs = [
+        arc
+        for arc in get_segment_drive_arcs(G, seg_id, seg_to_arcs)
+        if G[arc[0]][arc[1]][arc[2]].get("car_allowed", False)
+    ]
+
+    if not current_car_arcs:
+        return []
+
+    if _segment_is_oneway(G, seg_id, seg_to_arcs):
+        return current_car_arcs if remaining_after <= 0 else []
+
+    if remaining_after >= 2:
+        return []
+
+    if remaining_after == 1:
+        if keep_arc is None:
+            raise ValueError(
+                f"keep_arc is required to estimate lost car arcs for two-way segment {seg_id}"
+            )
+        keep_dir = keep_arc[:2]
+        return [arc for arc in current_car_arcs if arc[:2] != keep_dir]
+
+    return current_car_arcs
+
+
+def get_segment_bike_arcs_for_reallocation(
+    G: MultiDiGraph,
+    seg_id,
+    seg_to_arcs: dict,
+) -> list[tuple]:
+    """
+    Return the drive directions that would receive a new dedicated bike edge.
+    """
+    bike_arcs = []
+    for u, v, k in get_segment_drive_arcs(G, seg_id, seg_to_arcs):
+        if not _has_dedicated_bike_edge(G, u, v):
+            bike_arcs.append((u, v, k))
+    return bike_arcs
+
+
+def get_segment_reallocation_action(
+    G: MultiDiGraph,
+    seg_id,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+    keep_arc: tuple | None = None,
+) -> SegmentReallocationAction:
+    """
+    Describe the marginal effect of reallocating this segment once, now.
+    """
+    return SegmentReallocationAction(
+        seg_id=seg_id,
+        keep_arc=keep_arc,
+        remaining_after=get_segment_remaining_after_reallocation(segment_inventory, seg_id),
+        bike_arcs=tuple(get_segment_bike_arcs_for_reallocation(G, seg_id, seg_to_arcs)),
+        lost_car_arcs=tuple(
+            get_segment_lost_car_arcs_for_reallocation(
+                G,
+                seg_id,
+                segment_inventory,
+                seg_to_arcs,
+                keep_arc=keep_arc,
+            )
+        ),
+    )
+
+
+def build_segment_reallocation_actions(
+    G: MultiDiGraph,
+    candidate_segments,
+    segment_inventory: dict,
+    seg_to_arcs: dict,
+    keep_arc_policy: KeepArcPolicy = "first",
+    keep_arc_scores: dict | None = None,
+    rng=None,
+) -> dict:
+    """
+    Build marginal reallocation actions for candidates using an explicit policy.
+    """
+    actions = {}
+
+    for seg_id in sorted(candidate_segments, key=repr):
+        keep_arc = None
+        if segment_needs_keep_arc(G, seg_id, segment_inventory, seg_to_arcs):
+            keep_arc = choose_keep_arc_for_policy(
+                seg_id,
+                seg_to_arcs,
+                G,
+                policy=keep_arc_policy,
+                arc_scores=keep_arc_scores,
+                rng=rng,
+            )
+
+        actions[seg_id] = get_segment_reallocation_action(
+            G,
+            seg_id,
+            segment_inventory,
+            seg_to_arcs,
+            keep_arc=keep_arc,
+        )
+
+    return actions
+
+
 def check_segment_reallocatable(
     G: MultiDiGraph,
     seg_id,
@@ -87,7 +312,7 @@ def check_segment_reallocatable(
     if total <= 0 or not segment_inventory[seg_id].get("reallocatable", True):
         return False
 
-    remaining_total = total - 1
+    remaining_total = get_segment_remaining_after_reallocation(segment_inventory, seg_id)
     is_oneway = _segment_is_oneway(G_test, seg_id, seg_to_arcs)
 
     if (not is_oneway) and remaining_total == 1 and keep_arc is None:
@@ -162,8 +387,7 @@ def reallocate_segment_dedicated(
     created_edges = []
     arcs = seg_to_arcs[seg_id]
 
-    old_total = segment_inventory[seg_id]["lanes_remaining"]
-    new_total = max(0, old_total - 1)
+    new_total = get_segment_remaining_after_reallocation(segment_inventory, seg_id)
     segment_inventory[seg_id]["lanes_remaining"] = new_total
 
     _apply_segment_capacity_to_arcs(
@@ -191,20 +415,10 @@ def _apply_segment_capacity_to_arcs(
     remaining_total: int | float,
     keep_arc: tuple | None = None,
 ):
-    arcs = seg_to_arcs[seg_id]
+    unique_arcs = get_segment_drive_arcs(G, seg_id, seg_to_arcs)
 
-    drive_arcs = [
-        (u, v, k)
-        for (u, v, k) in arcs
-        if G.has_edge(u, v, k) and G[u][v][k].get("highway") != "cycleway"
-    ]
-
-    if not drive_arcs:
+    if not unique_arcs:
         return
-
-    # representative arc per direction
-    dir_to_arc = {arc[:2]: arc for arc in drive_arcs}
-    unique_arcs = list(dir_to_arc.values())
 
     is_oneway = _segment_is_oneway(G, seg_id, seg_to_arcs)
 
@@ -267,26 +481,13 @@ def choose_keep_arc_for_segment(
     """
     For a two-way segment with only 1 remaining car lane, choose which directed arc to keep.
     """
-    if _segment_is_oneway(G, seg_id, seg_to_arcs):
-        return None
-
-    arcs = seg_to_arcs[seg_id]
-
-    drive_arcs = [
-        arc for arc in arcs
-        if G.has_edge(*arc) and G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
-    ]
-
-    if not drive_arcs:
-        return None
-
-    dir_to_arc = {arc[:2]: arc for arc in drive_arcs}
-    unique_arcs = list(dir_to_arc.values())
-
-    if len(unique_arcs) == 1:
-        return unique_arcs[0]
-
-    return max(unique_arcs, key=lambda arc: arc_scores.get(arc, float("-inf")))
+    return choose_keep_arc_for_policy(
+        seg_id,
+        seg_to_arcs,
+        G,
+        policy="score",
+        arc_scores=arc_scores,
+    )
 
 def choose_first_keep_arc_for_segment(
     seg_id,
@@ -298,24 +499,12 @@ def choose_first_keep_arc_for_segment(
     for a two-way segment reduced to one remaining car lane,
     keep the first available drive arc.
     """
-    if _segment_is_oneway(G, seg_id, seg_to_arcs):
-        return None
-
-    arcs = seg_to_arcs[seg_id]
-
-    drive_arcs = [
-        arc for arc in arcs
-        if G.has_edge(*arc) and G[arc[0]][arc[1]][arc[2]].get("highway") != "cycleway"
-    ]
-    if not drive_arcs:
-        return None
-
-    dir_to_arc = {}
-    for arc in drive_arcs:
-        dir_to_arc.setdefault(arc[:2], arc)
-
-    unique_arcs = sorted(dir_to_arc.values(), key=lambda a: (a[0], a[1], a[2]))
-    return unique_arcs[0]
+    return choose_keep_arc_for_policy(
+        seg_id,
+        seg_to_arcs,
+        G,
+        policy="first",
+    )
 
 #endregion
 
@@ -362,6 +551,23 @@ def _as_bool(value) -> bool:
     return bool(value)
 
 
+def _as_lane_count(value, default: int = 1) -> int:
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple)):
+        return sum(_as_lane_count(v, default=0) for v in value) or default
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return default
+        if ";" in value:
+            return sum(_as_lane_count(v, default=0) for v in value.split(";")) or default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def build_segment_inventory(G_directed: MultiDiGraph) -> dict:
     """
     Build authoritative segment inventory from OSMnx undirected graph.
@@ -377,7 +583,7 @@ def build_segment_inventory(G_directed: MultiDiGraph) -> dict:
     inventory = {}
     for u, v, k, d in Gu.edges(keys=True, data=True):
         
-        lanes = d.get("lanes", 1)
+        lanes = _as_lane_count(d.get("car_lanes", d.get("lanes", 1)))
 
         inventory[(u, v, k)] = {
             "lanes_total": lanes,

@@ -86,12 +86,17 @@ def heuristic_od_segment_betweenness(
     seg_to_arcs: dict | None = None,
     bike_edge_importance: dict | None = None,
     car_edge_importance: dict | None = None,
+    candidate_actions: dict | None = None,
 ):
-    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
-        G_realloc,
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
+    if candidate_actions is None:
+        candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+            G_realloc,
+            arc_to_seg=arc_to_seg,
+            seg_to_arcs=seg_to_arcs,
+        )
+    else:
+        candidate_segments = list(candidate_actions)
+
     if not candidate_segments:
         return None
 
@@ -102,9 +107,16 @@ def heuristic_od_segment_betweenness(
 
     seg_scores = {}
     for seg_id in candidate_segments:
-        arcs = seg_to_arcs[seg_id]
-        bike_score = sum(bike_edge_importance.get(arc, 0.0) for arc in arcs)
-        car_score = sum(car_edge_importance.get(arc, 0.0) for arc in arcs)
+        if candidate_actions is None:
+            bike_arcs = seg_to_arcs[seg_id]
+            lost_car_arcs = seg_to_arcs[seg_id]
+        else:
+            action = candidate_actions[seg_id]
+            bike_arcs = action.bike_arcs
+            lost_car_arcs = action.lost_car_arcs
+
+        bike_score = sum(bike_edge_importance.get(arc, 0.0) for arc in bike_arcs)
+        car_score = sum(car_edge_importance.get(arc, 0.0) for arc in lost_car_arcs)
         seg_scores[seg_id] = bike_score - beta * car_score
 
     return max(seg_scores, key=seg_scores.get)
@@ -122,12 +134,17 @@ def heuristic_segment_betweenness_centrality(
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
     edge_betweenness_scores: dict | None = None,
+    candidate_actions: dict | None = None,
 ):
-    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
-        G_realloc,
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
+    if candidate_actions is None:
+        candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+            G_realloc,
+            arc_to_seg=arc_to_seg,
+            seg_to_arcs=seg_to_arcs,
+        )
+    else:
+        candidate_segments = list(candidate_actions)
+
     if not candidate_segments:
         return None
 
@@ -144,13 +161,18 @@ def heuristic_segment_betweenness_centrality(
             backend="parallel",
         )
 
-    candidate_set = set(candidate_segments)
     seg_scores = defaultdict(float)
 
-    for arc, score in edge_betweenness_scores.items():
-        seg = arc_to_seg.get(arc)
-        if seg in candidate_set:
-            seg_scores[seg] += score
+    if candidate_actions is None:
+        candidate_set = set(candidate_segments)
+        for arc, score in edge_betweenness_scores.items():
+            seg = arc_to_seg.get(arc)
+            if seg in candidate_set:
+                seg_scores[seg] += score
+    else:
+        for seg_id, action in candidate_actions.items():
+            for arc in action.bike_arcs:
+                seg_scores[seg_id] += edge_betweenness_scores.get(arc, 0.0)
 
     return max(seg_scores, key=seg_scores.get) if seg_scores else None
 
@@ -192,15 +214,23 @@ def heuristic_random(
     G_protected: MultiDiGraph,
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
+    candidate_actions: dict | None = None,
+    rng=None,
 ):
-    candidate_segments, _, _ = get_candidate_segments(
-        G_realloc,
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
+    if candidate_actions is None:
+        candidate_segments, _, _ = get_candidate_segments(
+            G_realloc,
+            arc_to_seg=arc_to_seg,
+            seg_to_arcs=seg_to_arcs,
+        )
+    else:
+        candidate_segments = list(candidate_actions)
+
     if not candidate_segments:
         return None
-    return random.choice(candidate_segments)
+
+    random_source = rng if rng is not None else random
+    return random_source.choice(candidate_segments)
 
 
 #region Component Heuristics
@@ -301,7 +331,7 @@ def _connect_components(
     return seg
 
 
-def fallback_edge(G_bikeable, G_realloc):
+def fallback_edge(G_bikeable, G_realloc, candidate_actions: dict | None = None):
     """
     Fallback for when protected network is too small.
     Keeps previous behaviour: use betweenness-based fallback.
@@ -313,6 +343,7 @@ def fallback_edge(G_bikeable, G_realloc):
         G_realloc,
         None,
         k_sample=50,
+        candidate_actions=candidate_actions,
     )
     return seg
 
@@ -325,9 +356,10 @@ def heuristic_L2S(
     G_protected: MultiDiGraph,
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
+    candidate_actions: dict | None = None,
 ) -> tuple:
     if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc)
+        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
 
     comps = sorted(nx.weakly_connected_components(G_protected), key=len, reverse=True)
     if len(comps) < 2:
@@ -353,9 +385,10 @@ def heuristic_L2C(
     G_protected: MultiDiGraph,
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
+    candidate_actions: dict | None = None,
 ):
     if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc)
+        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
 
     components = sorted(nx.strongly_connected_components(G_protected), key=len, reverse=True)
     if len(components) < 2:
@@ -385,16 +418,19 @@ def heuristic_R2C(
     G_protected: MultiDiGraph,
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
+    candidate_actions: dict | None = None,
+    rng=None,
 ):
     if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc)
+        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
 
     components = list(nx.strongly_connected_components(G_protected))
     if len(components) < 2:
         print("Already connected")
         return None
 
-    random.shuffle(components)
+    random_source = rng if rng is not None else random
+    random_source.shuffle(components)
 
     random_component = components[0]
     other_components = components[1:]
@@ -419,9 +455,10 @@ def heuristic_CC(
     G_protected: MultiDiGraph,
     arc_to_seg: dict | None = None,
     seg_to_arcs: dict | None = None,
+    candidate_actions: dict | None = None,
 ):
     if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc)
+        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
 
     components = list(nx.strongly_connected_components(G_protected))
     if len(components) < 2:

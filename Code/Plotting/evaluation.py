@@ -150,49 +150,156 @@ def plot_metrics(df):
     plt.show()
 
 
-def plot_od_investigation(df_sweep, random_avg_length, random_abs_error, best_beta, best_avg_m, title=""):
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+def plot_od_investigation(
+    df_sweep,
+    random_avg_length=None,
+    random_abs_error=None,
+    best_beta=None,
+    best_avg_m=None,
+    title="",
+    show_error_diagnostic=False,
+):
+    df = df_sweep.sort_values("beta").copy()
 
-    # Primary Y-Axis: Absolute Error
-    color_err = "tab:red"
-    ax1.set_xlabel("Beta Value (Log Scale)", fontsize=12)
-    ax1.set_ylabel("Abs Avg Distance Error (m)", color=color_err, fontsize=12)
-    ax1.plot(df_sweep["beta"], df_sweep["abs_avg_m_error"], marker="o", color=color_err, label="Abs Error")
-    ax1.axhline(y=random_abs_error, color=color_err, linestyle=":", alpha=0.5, label="Random Baseline Error")
-    ax1.tick_params(axis="y", labelcolor=color_err)
+    # Pick best beta from df if not explicitly supplied
+    if best_beta is None:
+        best_idx = df["abs_avg_m_error"].idxmin()
+        best_beta = df.loc[best_idx, "beta"]
+    else:
+        # Avoid exact float equality issues
+        best_idx = (df["beta"] - best_beta).abs().idxmin()
 
-    # Secondary Y-Axis: Avg Length
-    ax2 = ax1.twinx()
-    color_len = "tab:blue"
-    ax2.set_ylabel("Avg Path Length (m)", color=color_len, fontsize=12)
-    ax2.plot(df_sweep["beta"], df_sweep["avg_length"], marker="s", color=color_len, label="Avg Length", alpha=0.7)
-    ax2.axhline(y=random_avg_length, color=color_len, linestyle=":", alpha=0.5, label="Random Baseline Length")
-    ax2.axhline(y=ODConstants.TARGET_AVG_DISTANCE, color="green", linestyle="-", alpha=0.4, label="Target Avg Distance")
-    ax2.tick_params(axis="y", labelcolor=color_len)
+    best_error = df.loc[best_idx, "abs_avg_m_error"]
 
-    # Optimal Beta
-    best_error = df_sweep.loc[df_sweep["beta"] == best_beta, "abs_avg_m_error"].values[0]
-    plt.axvline(x=best_beta, color="green", linestyle="--", linewidth=2, label=f"Optimal Beta ({best_beta:.2e})")
-    ax1.plot(best_beta, best_error, "ko", markersize=10, fillstyle="none")
-    ax2.plot(best_beta, best_avg_m, "ks", markersize=10, fillstyle="none")
+    if best_avg_m is None:
+        best_avg_m = df.loc[best_idx, "avg_length"]
 
-    ax1.annotate(
-        f"Avg Length: {best_avg_m/1000:.2f}km\nError: {best_error:.0f}m",
-        xy=(best_beta, best_error),
-        xytext=(best_beta * 1.5, best_error * 1.1),
-        arrowprops=dict(arrowstyle="->", color="black"),
-        fontweight="bold",
-        color="green",
+    target_km = ODConstants.TARGET_AVG_DISTANCE / 1000.0
+
+    # Detect whether optimum is at sweep boundary
+    best_at_edge = best_idx in [df.index[0], df.index[-1]]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Main line: average path length
+    ax.plot(
+        df["beta"],
+        df["avg_length"] / 1000.0,
+        marker="o",
+        linewidth=2,
+        label="Simulated avg path length",
     )
 
-    plt.title(title or "Beta Sweep: Distance Error vs Avg Path Length", fontsize=14)
-    ax1.set_xscale("log")
+    # Target line
+    ax.axhline(
+        y=target_km,
+        linestyle="-",
+        linewidth=2,
+        alpha=0.6,
+        label=f"Target avg distance ({target_km:.2f} km)",
+    )
 
-    lines1, labels1 = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=3)
+    # Optional random baseline
+    if random_avg_length is not None:
+        ax.axhline(
+            y=random_avg_length / 1000.0,
+            linestyle=":",
+            linewidth=2,
+            alpha=0.7,
+            label=f"Random baseline ({random_avg_length / 1000.0:.2f} km)",
+        )
+
+    # Best beta marker
+    ax.axvline(
+        x=best_beta,
+        linestyle="--",
+        linewidth=2,
+        label=f"Selected beta ({best_beta:.2e})",
+    )
+
+    ax.plot(
+        best_beta,
+        best_avg_m / 1000.0,
+        marker="o",
+        markersize=10,
+        fillstyle="none",
+        color="black",
+    )
+
+    annotation = (
+        f"β = {best_beta:.2e}\n"
+        f"Avg length = {best_avg_m / 1000.0:.2f} km\n"
+        f"Error = {best_error:.0f} m"
+    )
+
+    if best_at_edge:
+        annotation += "\nBest is at sweep edge"
+
+    ax.annotate(
+        annotation,
+        xy=(best_beta, best_avg_m / 1000.0),
+        xytext=(15, 15),
+        textcoords="offset points",
+        arrowprops=dict(arrowstyle="->"),
+        fontweight="bold",
+    )
+
+    ax.set_title(title or "Beta Sweep: Avg Path Length Calibration", fontsize=14)
+    ax.set_xlabel("Beta value", fontsize=12)
+    ax.set_ylabel("Avg path length (km)", fontsize=12)
+    ax.set_xscale("log")
+
+    ax.grid(True, which="both", alpha=0.25)
+    ax.legend(loc="best")
     plt.tight_layout()
     plt.show()
+
+    # Optional separate diagnostic plot: error only
+    if show_error_diagnostic:
+        fig, ax = plt.subplots(figsize=(10, 4))
+
+        ax.plot(
+            df["beta"],
+            df["abs_avg_m_error"],
+            marker="o",
+            linewidth=2,
+            label="Absolute error",
+        )
+
+        if random_abs_error is not None:
+            ax.axhline(
+                y=random_abs_error,
+                linestyle=":",
+                linewidth=2,
+                alpha=0.7,
+                label=f"Random baseline error ({random_abs_error:.0f} m)",
+            )
+
+        ax.axvline(
+            x=best_beta,
+            linestyle="--",
+            linewidth=2,
+            label=f"Selected beta ({best_beta:.2e})",
+        )
+
+        ax.plot(
+            best_beta,
+            best_error,
+            marker="o",
+            markersize=10,
+            fillstyle="none",
+            color="black",
+        )
+
+        ax.set_title("Beta Sweep Diagnostic: Absolute Error", fontsize=14)
+        ax.set_xlabel("Beta value", fontsize=12)
+        ax.set_ylabel("Absolute avg distance error (m)", fontsize=12)
+        ax.set_xscale("log")
+
+        ax.grid(True, which="both", alpha=0.25)
+        ax.legend(loc="best")
+        plt.tight_layout()
+        plt.show()
 
 
 def plot_od_matrix_error(error, title=None):

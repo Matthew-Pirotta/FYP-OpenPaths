@@ -1,6 +1,7 @@
 from networkx import MultiDiGraph
 import graph_util as graph_util
 import copy
+import random
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import osmnx as ox
@@ -15,92 +16,40 @@ import constants
 
 from . import heuristic, evaluation
 
-def _choose_keep_arc_for_heuristic(
+def _keep_arc_policy_for_heuristic(heuristic_func):
+    name = heuristic_func.__name__
+
+    if name in {
+        "heuristic_segment_betweenness_centrality",
+        "heuristic_od_segment_betweenness",
+    }:
+        return "score"
+
+    if name == "heuristic_random":
+        return "random"
+
+    return "first"
+
+
+def _keep_arc_scores_for_heuristic(
     heuristic_func,
-    G_working,
-    G_drive,
-    G_bikeable,
-    seg_id,
-    seg_to_arcs,
-    bike_paths,
-    car_paths,
-    beta,
-    k_sample,
-    bike_edge_importance=None,
     car_edge_importance=None,
     edge_betweenness_scores=None,
-):
+) -> dict | None:
     """
-    Choose which drive arc to keep when a 2-way segment is reduced to 1 lane.
-
-    Policy:
-    - Random + component heuristics -> dumb keep
-    - Pure betweenness -> smart keep using edge betweenness
-    - OD betweenness -> smart keep using OD edge importance
+    Scores used only to decide which car direction survives when needed.
     """
     name = heuristic_func.__name__
 
-    # -------------------------
-    # Smart keep: pure betweenness
-    # -------------------------
-    if name == "heuristic_segment_betweenness_centrality":
-        arc_scores = edge_betweenness_scores
-
-        if arc_scores is None:
-            k_eff = None if k_sample is None else min(G_bikeable.number_of_nodes(), k_sample)
-            arc_scores = nx.edge_betweenness_centrality(
-                G_bikeable,
-                weight="bike_cost_penalty",
-                normalized=True,
-                k=k_eff,
-                seed=heuristic.SEED,
-                backend="parallel",
-            )
-
-        return graph_util.choose_keep_arc_for_segment(
-            seg_id,
-            seg_to_arcs,
-            arc_scores,
-            G_working,
-        )
-
-    # -------------------------
-    # Smart keep: OD betweenness
-    # -------------------------
     if name == "heuristic_od_segment_betweenness":
-        b_imp = bike_edge_importance
-        c_imp = car_edge_importance
+        # Keep the car direction with the larger OD car importance, so the
+        # marginal car harm counts the less important direction as lost.
+        return car_edge_importance
 
-        if b_imp is None:
-            b_imp = (
-                paths_util.compute_edge_importance(G_bikeable, bike_paths)
-                if bike_paths is not None else {}
-            )
-        if c_imp is None:
-            c_imp = (
-                paths_util.compute_edge_importance(G_drive, car_paths)
-                if car_paths is not None else {}
-            )
+    if name == "heuristic_segment_betweenness_centrality":
+        return edge_betweenness_scores
 
-        arc_scores = {}
-        for arc in set(b_imp) | set(c_imp):
-            arc_scores[arc] = b_imp.get(arc, 0.0) - beta * c_imp.get(arc, 0.0)
-
-        return graph_util.choose_keep_arc_for_segment(
-            seg_id,
-            seg_to_arcs,
-            arc_scores,
-            G_working,
-        )
-
-    # -------------------------
-    # Dumb keep: random + component heuristics
-    # -------------------------
-    return graph_util.choose_first_keep_arc_for_segment(
-        seg_id,
-        seg_to_arcs,
-        G_working,
-    )
+    return None
 
 @dataclass
 class StopState:
@@ -234,6 +183,8 @@ def _select_edge(
     bike_edge_importance=None,
     car_edge_importance=None,
     edge_betweenness_scores=None,
+    candidate_actions=None,
+    rng=None,
 ):
     """
     Dispatch to heuristic function according to its signature.
@@ -261,6 +212,10 @@ def _select_edge(
         kwargs["car_edge_importance"] = car_edge_importance
     if "edge_betweenness_scores" in sig.parameters:
         kwargs["edge_betweenness_scores"] = edge_betweenness_scores
+    if "candidate_actions" in sig.parameters:
+        kwargs["candidate_actions"] = candidate_actions
+    if "rng" in sig.parameters:
+        kwargs["rng"] = rng
 
     return heuristic_func(
         G_working,
@@ -290,6 +245,7 @@ def run_locality_task(args):
     bike_paths = None
     car_paths = None
     beta = 1.0
+    rng = random.Random(heuristic.SEED)
 
     od_bike_edge_importance = None
     od_car_edge_importance = None
@@ -370,6 +326,32 @@ def run_locality_task(args):
                 backend="parallel",
             )
 
+        candidate_segments, _, _ = heuristic.get_candidate_segments(
+            G_realloc,
+            arc_to_seg=arc_to_seg,
+            seg_to_arcs=seg_to_arcs,
+        )
+
+        if not candidate_segments:
+            print(f"[stop] No reallocatable segments left for {name}, stopping early at iteration {i}")
+            break
+
+        keep_arc_policy = _keep_arc_policy_for_heuristic(heuristic_func)
+        keep_arc_scores = _keep_arc_scores_for_heuristic(
+            heuristic_func,
+            car_edge_importance=od_car_edge_importance,
+            edge_betweenness_scores=bike_edge_betweenness_scores,
+        )
+        candidate_actions = graph_util.build_segment_reallocation_actions(
+            G_working,
+            candidate_segments,
+            segment_inventory,
+            seg_to_arcs,
+            keep_arc_policy=keep_arc_policy,
+            keep_arc_scores=keep_arc_scores,
+            rng=rng,
+        )
+
         segment_to_reallocate = _select_edge(
             heuristic_func,
             sig,
@@ -387,32 +369,27 @@ def run_locality_task(args):
             bike_edge_importance=od_bike_edge_importance,
             car_edge_importance=od_car_edge_importance,
             edge_betweenness_scores=bike_edge_betweenness_scores,
+            candidate_actions=candidate_actions,
+            rng=rng,
         )
 
         if segment_to_reallocate is None:
             print(f"[stop] No more valid segments left to reallocate for {name}")
             break
 
-        remaining_after = segment_inventory[segment_to_reallocate]["lanes_remaining"] - 1
-        is_oneway = graph_util._segment_is_oneway(G_working, segment_to_reallocate, seg_to_arcs)
+        selected_action = candidate_actions.get(segment_to_reallocate)
+        if selected_action is None:
+            selected_action = graph_util.build_segment_reallocation_actions(
+                G_working,
+                [segment_to_reallocate],
+                segment_inventory,
+                seg_to_arcs,
+                keep_arc_policy=keep_arc_policy,
+                keep_arc_scores=keep_arc_scores,
+                rng=rng,
+            )[segment_to_reallocate]
 
-        keep_arc = None
-        if (not is_oneway) and remaining_after == 1:
-            keep_arc = _choose_keep_arc_for_heuristic(
-                heuristic_func=heuristic_func,
-                G_working=G_working,
-                G_drive=G_drive,
-                G_bikeable=G_bikeable,
-                seg_id=segment_to_reallocate,
-                seg_to_arcs=seg_to_arcs,
-                bike_paths=bike_paths,
-                car_paths=car_paths,
-                beta=beta,
-                k_sample=k_sample,
-                bike_edge_importance=od_bike_edge_importance,
-                car_edge_importance=od_car_edge_importance,
-                edge_betweenness_scores=bike_edge_betweenness_scores,
-            )
+        keep_arc = selected_action.keep_arc
 
         if graph_util.check_segment_reallocatable(
             G_working,
@@ -437,6 +414,8 @@ def run_locality_task(args):
                 "event_type": "reallocated_segment",
                 "segment": segment_to_reallocate,
                 "keep_arc": keep_arc,
+                "bike_arcs": selected_action.bike_arcs,
+                "lost_car_arcs": selected_action.lost_car_arcs,
                 "created_edges": created_edges,
             })
         else:
@@ -455,6 +434,8 @@ def run_locality_task(args):
                 "event_type": "marked_segment_not_reallocatable",
                 "segment": segment_to_reallocate,
                 "keep_arc": keep_arc,
+                "bike_arcs": selected_action.bike_arcs,
+                "lost_car_arcs": selected_action.lost_car_arcs,
                 "created_edges": None,
             })
 
