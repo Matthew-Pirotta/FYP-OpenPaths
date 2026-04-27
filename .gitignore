@@ -1,3 +1,6 @@
+*.png
+*.svg
+
 Simulations/*/
 Output/
 Data/

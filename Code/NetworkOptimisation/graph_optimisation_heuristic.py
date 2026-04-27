@@ -287,10 +287,9 @@ def run_locality_task(args):
 
         if uses_od_scores:
             refresh_paths = (
-                paths_dirty
-                or (i % EVALUATION_MOD == 0)
-                or (bike_paths is None)
-                or (car_paths is None)
+                bike_paths is None
+                or car_paths is None
+                or i % EVALUATION_MOD == 0
             )
 
             if refresh_paths:

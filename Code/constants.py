@@ -39,7 +39,7 @@ DEFUALT_MAXIUM_SPEED_KMH = 60.0 #Maltese highway code for built up areas
 
 #stopping rules
 MIN_BIKE_GAIN = 0.005   # 0.5% of baseline bike total cost
-MAX_CAR_HARM = 0.03     # 3% cumulative increase in car total cost
+MAX_CAR_HARM = 0.3     # 30% cumulative increase in car total cost
 PATIENCE = 5            # require weak bike gains for 3 evals in a row
 
 # Evaluation penalty applied per trip when an OD pair cannot be routed.

@@ -44,12 +44,32 @@ MultiDiGraphs are nonplanar directed graphs with possible self-loops and paralle
 Also if there are multiple lanes in same direction there will be a lanes attribute.
 
 “if the path is NOT one-way, reverse direction of each edge and add this path going the opposite direction too” (https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py)
-Because OSMnx copies the way attributes into both directed edge additions, both directions can end up carrying lanes=1 as metadata. That does not mean the road has one lane in each direction; it means the original OSM way had lanes=1, and OSMnx attached that same way-level tag to both directed representations. Although if there is something like 4lanes, they should be split evenly between edges, allegdly.
+Because OSMnx copies the way attributes into both directed edge additions, both directions can end up carrying lanes=1 as metadata. That does not mean the road has one lane in each direction; it means the original OSM way had lanes=1, and OSMnx attached that same way-level tag to both directed representations. Even if there is something like 4lanes, the 4 lane attribute will be coppied to both lanes (as per "G.add_edges_from([(v, u) for u, v in edges], **path)")
 If my understanding is correct, if lanes are None, but road is tagged as two way, then osmnx will create edges in both directions but without a lanes attribute.
 TODO: SO AM I DOUBLE COUNTING LANES????
+if i were to have a one lane two way road, each directed edge would end up having a lane, 
+^
+Possible solutions:
+regarding Lane count: Lane count is not always provided but typically major roads have their lane count provided, and that minor roads typically dont have their land count. We can just assume a lane count of 1 even if they are two as typical for malta.
+
+1. is to convert to an undirected graph which would have the lane count. And this undirected graph would be authorative for car lane count. So if the lane gets reallocated both directed edges are no longer accessible to cars. Note that when converting to undirected the algorithm only merges edges with an overlapping geometry, which is good as it accounts for the one lane two way situation, but allows an for two seperate road geometries to act independently. (In fact, "Using undirected graph edges prevents double-counting bidirectional edges of a two-way street, but may double-count a divided road’s separate centerlines with different end point nodes"  https://osmnx.readthedocs.io/en/stable/user-reference.html#module-osmnx.stats)
+2. We can keep the double counting and assume that there is street parking that can be reallocated?
 
 ox.settings.all_oneway = True, sets all roads as one way immediatly, and thus messes up roads which are tagged as two way and consquently dfoes not create the reverse edge.Note that some internal edge attribute is still retained but the actual edge is not created. https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py#L762#
 NOTE that this intepretion in brakcets is wrong (#TODO NOTE forces the graph to have seperate edges for each direction )
+
+“Only use if subsequently saving graph to an OSM XML file via the save_graph_xml function. If True, forces all ways to be added as one-way ways, preserving the original order of the nodes in the OSM way.” (https://github.com/gboeing/osmnx/blob/main/osmnx/settings.py#L4)
+
+
+#TODO is the bike network set as a bidirectioanal network in the settings? i feel like this might make a difference
+
+
+
+Exporting for SUMO?
+- requires all_oneway=True or else will break (i tested it). (https://osmnx.readthedocs.io/en/stable/user-reference.html#osmnx.io.save_graph_xml).  So for save_graph_xml, OSMnx expects all of these together: unsimplified, unprojected, created with all_oneway=True.
+- Conversion possibilites include SUMO netdiff.py, but i dont think this really helps (https://sumo.dlr.de/docs/Tools/Net.html#netdiffpy)
+- What if I do all the changes on the Grapth with ox.settings.all_oneway = False, and is simplified, henceforth G_edit. Let ox.settings.all_oneway = True, and is unsimbplied be known as G_export. To apply all the edge changes from G_edit to G_export I am foreseeing two main issues, 1.Mapping the simplified to unsimplified edges which I was initally using merged_edges attrubte from the simplification process. 2.There no longer is a valid edge mapping due to some edges not exisiting due to one_way differences, even tho I could use a node level/edge_id level to track changes I fear that since lane count isnt available on all edges it might lead to innacuriecies.
+- Possible solution includes not using G_simplified and only using G_unsimplified but as discussed before this will affect metrics and run time. PLus actually mapping the changes still seems problematic.
 -------
 Edge attributes:
 
@@ -176,3 +196,6 @@ https://sumo.dlr.de/docs/Tools/Visualization.html
 ----
 
 Many cycling lanes arent properally tagged, for example on the coast road is is actually just a lane in the road. But it is tagged highway:cycleway, but is missing cycleway:lane. Conversely the road from rabat to H'attard, is technically seperated and thus needs the cycleway:track.
+---
+
+edge_betweenness_centrality does take into account that the graph is directed.
