@@ -56,7 +56,7 @@ def compute_candidate_paths(G, OD_list, path_weight_metric:Literal["car_cost_cur
 
     for o, d, w in _iter_od_triples(OD_list):
         try:
-            path = nx.shortest_path(G, o, d, weight=path_weight_metric)
+            path = nx.bidirectional_dijkstra(G, o, d, weight=path_weight_metric)
             paths[(o, d, w)] = path
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
