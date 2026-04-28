@@ -402,6 +402,10 @@ def reallocate_segment_dedicated(
         d = G[u][v][k]
         if d.get("highway") == "cycleway":
             continue
+
+        #Mark the original road as no longer bikeable
+        #So that the bikeable subgraphs maintains a digraph and not multidigraph.
+        d["bike_allowed"] = False
         if not _has_dedicated_bike_edge(G, u, v):
             created_edges.append(_create_bike_edge(G, u, v, d))
 

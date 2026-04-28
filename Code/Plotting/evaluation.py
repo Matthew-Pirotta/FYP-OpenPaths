@@ -14,10 +14,10 @@ def plot_metrics(df):
                 return col
         return None
 
-    def _plot_if_exists(ax, col, *, label, color, linestyle="-", scale=1.0):
+    def _plot_if_exists(ax, col, *, label, color, linestyle="-", scale=1.0, marker="o"):
         if col is None:
             return
-        ax.plot(x, df[col] * scale, label=label, color=color, linewidth=2, linestyle=linestyle)
+        ax.plot(x, df[col] * scale, label=label, color=color, linewidth=2, linestyle=linestyle, marker=marker, markersize=4)
 
     # Figure 1: Main OD performance
     fig1, axs1 = plt.subplots(1, 3, figsize=(12, 4.5))

@@ -109,6 +109,7 @@ def attach_locality_and_population_to_residential( gdf_residential, gdf_localiti
 
     return joined
 
+#TODO does this even use the residential weighting?
 def build_residential_destinations_from_joined_residential(
     gdf_residential_joined: gpd.GeoDataFrame,
     *,
