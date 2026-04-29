@@ -154,3 +154,12 @@ Argument for weakly connected is that the graph works as is. However is methodol
 Moreover many papers refer to the network must remain connected, but never specify weakly or strongly. But wiedmann does specifically mention strongly connected as a requirement.
 
 Could make the maintain the SCC strongly, and the rest weakly? but feels a bit ehhh 
+
+---
+for 10,000 od pairs:
+    - networkx grouped origin takes 1569 seconds,
+    - networkx normal dijkstras takes 558 seconds
+    - bidirectional_dijkstra with paths: 231 seconds,
+    - networkkit origin grouped dijkstra takes 67 seconds  
+    - cugraph needs linux or wls to run. 
+---

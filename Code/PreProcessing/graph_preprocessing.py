@@ -13,7 +13,7 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
         print("creating master graph network...")
         #NOTE attributes from G_bike take precedent
         G_master = nx.compose(G_drive, G_bike)
-        G_master = ox.truncate.largest_component(G_master, strongly=False) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
+        G_master = ox.truncate.largest_component(G_master, strongly=True) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
 
         # initialize all master edges explicitly
         for u, v, k in G_master.edges(keys=True):

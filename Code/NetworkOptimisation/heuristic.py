@@ -264,6 +264,18 @@ def _find_closest_component(G: MultiDiGraph, main_component: set, other_componen
     return closest_component, min_dist
 
 
+def _components_by_distance(G: MultiDiGraph, source_component: set, target_components: list[set]):
+    source_centroid = _calc_network_centroid(G, source_component)
+    distances = []
+
+    for comp in target_components:
+        comp_centroid = _calc_network_centroid(G, comp)
+        dist = np.linalg.norm(source_centroid - comp_centroid)
+        distances.append((dist, comp))
+
+    return [comp for _, comp in sorted(distances, key=lambda item: item[0])]
+
+
 def _select_bridge_segment(
     G_master: MultiDiGraph,
     path: list,
@@ -329,6 +341,47 @@ def _connect_components(
         target_comp,
     )
     return seg
+
+
+def _connect_nearest_feasible_component(
+    G_master: MultiDiGraph,
+    G_distance: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    source_comp: set,
+    target_components: list[set],
+    label: str,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+):
+    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+        G_realloc,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+    )
+    if not candidate_segments:
+        print(f"[{label}] No reallocatable segments available.")
+        return None
+
+    candidate_segments = set(candidate_segments)
+
+    for target_comp in _components_by_distance(G_distance, source_comp, target_components):
+        path, cost = _find_bridge_path(G_master, source_comp, target_comp)
+        if not path or len(path) < 2:
+            continue
+
+        seg = _select_bridge_segment(
+            G_master,
+            path,
+            candidate_segments,
+            arc_to_seg,
+            source_comp,
+            target_comp,
+        )
+        if seg is not None:
+            return seg
+
+    print(f"[{label}] No bridge path with a reallocatable segment found.")
+    return None
 
 
 def fallback_edge(G_bikeable, G_realloc, candidate_actions: dict | None = None):
@@ -397,13 +450,13 @@ def heuristic_L2C(
 
     largest = components[0]
     others = components[1:]
-    closest_component, _ = _find_closest_component(G_bikeable, largest, others)
 
-    return _connect_components(
+    return _connect_nearest_feasible_component(
         G_master,
+        G_bikeable,
         G_realloc,
         largest,
-        closest_component,
+        others,
         "L2C",
         arc_to_seg=arc_to_seg,
         seg_to_arcs=seg_to_arcs,
