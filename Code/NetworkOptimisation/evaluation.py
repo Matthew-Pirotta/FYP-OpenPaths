@@ -246,26 +246,14 @@ def network_evaluation(
     G_drive: MultiDiGraph,
     OD_pairs,
     k_sample=None,
-    parallel_od_costs: bool = True,
     unrouted_trip_penalty: float = constants.UNROUTED_TRIP_PENALTY_COST,
 ) -> dict:
 
     # Precompute OD costs once
-    if parallel_od_costs:
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            drive_length_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "length")
-            car_cost_future = executor.submit(compute_od_costs, G_drive, OD_pairs, "car_cost_current")
-            full_bike_future = executor.submit(compute_od_costs, G_bike_full, OD_pairs, "bike_cost_penalty")
-            protected_bike_future = executor.submit(compute_od_costs, G_bike_protected, OD_pairs, "bike_cost_penalty")
-            drive_length_costs = drive_length_future.result()
-            car_costs = car_cost_future.result()
-            full_bike_costs = full_bike_future.result()
-            protected_bike_costs = protected_bike_future.result()
-    else:
-        drive_length_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
-        car_costs = compute_od_costs(G_drive, OD_pairs, weight="car_cost_current")
-        full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
-        protected_bike_costs = compute_od_costs(G_bike_protected, OD_pairs, weight="bike_cost_penalty")
+    drive_length_costs = compute_od_costs(G_drive, OD_pairs, weight="length")
+    car_costs = compute_od_costs(G_drive, OD_pairs, weight="car_cost_current")
+    full_bike_costs = compute_od_costs(G_bike_full, OD_pairs, weight="bike_cost_penalty")
+    protected_bike_costs = compute_od_costs(G_bike_protected, OD_pairs, weight="bike_cost_penalty")
 
     all_od = [(o, d, w) for o, d, w in _iter_od_triples(OD_pairs) if w > 0 and o != d]
 

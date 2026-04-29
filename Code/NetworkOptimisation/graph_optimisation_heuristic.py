@@ -2,9 +2,6 @@ from networkx import MultiDiGraph
 import graph_util as graph_util
 import copy
 import random
-import concurrent.futures
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import osmnx as ox
 import pandas as pd
 import networkx as nx 
 import inspect
@@ -57,6 +54,43 @@ class StopState:
     baseline_car_cost: float | None = None
     prev_bike_cost: float | None = None
     small_gain_streak: int = 0
+
+
+@dataclass
+class OptimisationRun:
+    G_working: MultiDiGraph
+    segment_inventory: dict
+    arc_to_seg: dict
+    seg_to_arcs: dict
+    evaluations: list
+    event_log: list
+    sig: inspect.Signature
+    stop_state: StopState
+    rng: random.Random
+
+
+@dataclass
+class IterationGraphs:
+    G_drive: MultiDiGraph
+    G_bikeable: MultiDiGraph
+    G_realloc: MultiDiGraph
+    G_protected: MultiDiGraph
+
+
+@dataclass
+class HeuristicCache:
+    bike_paths: object | None = None
+    car_paths: object | None = None
+    od_bike_edge_importance: dict | None = None
+    od_car_edge_importance: dict | None = None
+    bike_edge_betweenness_scores: dict | None = None
+    bike_graph_dirty: bool = True
+
+
+@dataclass(frozen=True)
+class SegmentChoice:
+    segment: object
+    action: object
 
 def _compute_progress_metrics(ev: dict, state: StopState) -> tuple[dict, StopState]:
     """
@@ -226,287 +260,332 @@ def _select_edge(
         **kwargs,
     )
 
-def run_locality_task(args):
-    name, G_sub, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD, dry_run = args
 
-    print(f"[start] Starting {name} in process")
-    G_working = copy.deepcopy(G_sub)
-
+def _setup_optimisation_run(
+    G_master: MultiDiGraph,
+    heuristic_func: Callable,
+) -> OptimisationRun:
+    G_working = copy.deepcopy(G_master)
     segment_inventory = graph_util.build_segment_inventory(G_working)
     arc_to_seg, seg_to_arcs = graph_util.build_arc_to_segment_map(G_working)
     graph_util.refresh_segment_reallocatable_flags(G_working, segment_inventory, seg_to_arcs)
 
-    evaluations = []
-    event_log = []
-    sig = inspect.signature(heuristic_func)
+    return OptimisationRun(
+        G_working=G_working,
+        segment_inventory=segment_inventory,
+        arc_to_seg=arc_to_seg,
+        seg_to_arcs=seg_to_arcs,
+        evaluations=[],
+        event_log=[],
+        sig=inspect.signature(heuristic_func),
+        stop_state=StopState(),
+        rng=random.Random(heuristic.SEED),
+    )
 
-    state = StopState()
 
-    bike_paths = None
-    car_paths = None
+def _build_iteration_graphs(G_working: MultiDiGraph) -> IterationGraphs:
+    G_bikeable = graph_util.make_bikeable_subgraph(G_working)
+    return IterationGraphs(
+        G_drive=graph_util.make_drive_subgraph(G_working),
+        G_bikeable=G_bikeable,
+        G_realloc=graph_util.make_reallocatable_subgraph(G_bikeable),
+        G_protected=graph_util.make_protected_subgraph(G_working),
+    )
+
+
+def _refresh_heuristic_cache(
+    cache: HeuristicCache,
+    heuristic_func: Callable,
+    graphs: IterationGraphs,
+    od,
+    iteration: int,
+    EVALUATION_MOD: int,
+    k_sample,
+) -> HeuristicCache:
+    """
+    Refresh expensive path and centrality data only for heuristics that use it.
+    """
+    heuristic_name = heuristic_func.__name__
+
+    if heuristic_name == "heuristic_od_segment_betweenness":
+        refresh_paths = (
+            cache.bike_paths is None
+            or cache.car_paths is None
+            or iteration % EVALUATION_MOD == 0
+        )
+
+        if refresh_paths:
+            cache.bike_paths = paths_util.compute_candidate_paths(
+                graphs.G_bikeable,
+                od,
+                path_weight_metric="bike_cost_penalty",
+            )
+            cache.car_paths = paths_util.compute_candidate_paths(
+                graphs.G_drive,
+                od,
+                path_weight_metric="car_cost_current",
+            )
+
+            cache.od_bike_edge_importance = paths_util.compute_edge_importance(
+                graphs.G_bikeable,
+                cache.bike_paths,
+            )
+            cache.od_car_edge_importance = paths_util.compute_edge_importance(
+                graphs.G_drive,
+                cache.car_paths,
+            )
+
+    if (
+        heuristic_name == "heuristic_segment_betweenness_centrality"
+        and (cache.bike_graph_dirty or cache.bike_edge_betweenness_scores is None)
+    ):
+        k_eff = None if k_sample is None else min(graphs.G_bikeable.number_of_nodes(), k_sample)
+
+        cache.bike_edge_betweenness_scores = nx.edge_betweenness_centrality(
+            graphs.G_bikeable,
+            weight="bike_cost_penalty",
+            normalized=True,
+            k=k_eff,
+            seed=heuristic.SEED,
+            backend="parallel",
+        )
+
+    return cache
+
+
+def _choose_segment_to_reallocate(
+    run: OptimisationRun,
+    cache: HeuristicCache,
+    graphs: IterationGraphs,
+    heuristic_func: Callable,
+    k_sample,
+    beta: float,
+) -> SegmentChoice | None:
+    """
+    Build candidate segment actions, then ask the selected heuristic to choose one.
+    """
+    candidate_segments, _, _ = heuristic.get_candidate_segments(
+        graphs.G_realloc,
+        arc_to_seg=run.arc_to_seg,
+        seg_to_arcs=run.seg_to_arcs,
+    )
+
+    if not candidate_segments:
+        return None
+
+    keep_arc_policy = _keep_arc_policy_for_heuristic(heuristic_func)
+    keep_arc_scores = _keep_arc_scores_for_heuristic(
+        heuristic_func,
+        car_edge_importance=cache.od_car_edge_importance,
+        edge_betweenness_scores=cache.bike_edge_betweenness_scores,
+    )
+    candidate_actions = graph_util.build_segment_reallocation_actions(
+        run.G_working,
+        candidate_segments,
+        run.segment_inventory,
+        run.seg_to_arcs,
+        keep_arc_policy=keep_arc_policy,
+        keep_arc_scores=keep_arc_scores,
+        rng=run.rng,
+    )
+
+    segment_to_reallocate = _select_edge(
+        heuristic_func,
+        run.sig,
+        run.G_working,
+        graphs.G_drive,
+        graphs.G_bikeable,
+        graphs.G_realloc,
+        graphs.G_protected,
+        cache.bike_paths,
+        cache.car_paths,
+        beta,
+        k_sample,
+        run.arc_to_seg,
+        run.seg_to_arcs,
+        bike_edge_importance=cache.od_bike_edge_importance,
+        car_edge_importance=cache.od_car_edge_importance,
+        edge_betweenness_scores=cache.bike_edge_betweenness_scores,
+        candidate_actions=candidate_actions,
+        rng=run.rng,
+    )
+
+    if segment_to_reallocate is None:
+        return None
+
+    selected_action = candidate_actions.get(segment_to_reallocate)
+    if selected_action is None:
+        selected_action = graph_util.build_segment_reallocation_actions(
+            run.G_working,
+            [segment_to_reallocate],
+            run.segment_inventory,
+            run.seg_to_arcs,
+            keep_arc_policy=keep_arc_policy,
+            keep_arc_scores=keep_arc_scores,
+            rng=run.rng,
+        )[segment_to_reallocate]
+
+    return SegmentChoice(segment=segment_to_reallocate, action=selected_action)
+
+
+def _apply_segment_choice(
+    run: OptimisationRun,
+    choice: SegmentChoice,
+    iteration: int,
+) -> bool:
+    """
+    Apply the chosen segment change, or mark the segment blocked if it breaks drive connectivity.
+
+    Returns whether bike-graph-dependent caches should be recomputed next iteration.
+    """
+    keep_arc = choice.action.keep_arc
+
+    if graph_util.check_segment_reallocatable(
+        run.G_working,
+        choice.segment,
+        run.segment_inventory,
+        run.seg_to_arcs,
+        keep_arc=keep_arc,
+    ):
+        created_edges = graph_util.reallocate_segment_dedicated(
+            run.G_working,
+            choice.segment,
+            run.segment_inventory,
+            run.seg_to_arcs,
+            keep_arc=keep_arc,
+        )
+
+        event_type = "reallocated_segment"
+        bike_graph_dirty = True
+    else:
+        run.segment_inventory[choice.segment]["reallocatable"] = False
+
+        for u, v, k in run.seg_to_arcs[choice.segment]:
+            run.G_working[u][v][k]["reallocatable"] = False
+
+        graph_util.refresh_segment_reallocatable_flags(
+            run.G_working,
+            run.segment_inventory,
+            run.seg_to_arcs,
+        )
+
+        created_edges = None
+        event_type = "marked_segment_not_reallocatable"
+        bike_graph_dirty = False
+
+    run.event_log.append({
+        "iteration": iteration,
+        "event_type": event_type,
+        "segment": choice.segment,
+        "keep_arc": keep_arc,
+        "bike_arcs": choice.action.bike_arcs,
+        "lost_car_arcs": choice.action.lost_car_arcs,
+        "created_edges": created_edges,
+    })
+
+    return bike_graph_dirty
+
+
+def run_optimisation(
+    G_master: MultiDiGraph,
+    heuristic_func: Callable,
+    od,
+    EVALUATION_MOD=10,
+    n_iterations=10,
+    k_sample=None,
+    dry_run: bool = False,
+    name: str = "MASTER",
+):
+    """Run heuristic optimisation on one main graph."""
+
+    print(f"[start] Starting {name}")
+    run = _setup_optimisation_run(G_master, heuristic_func)
+    cache = HeuristicCache()
     beta = 1.0
-    rng = random.Random(heuristic.SEED)
 
-    od_bike_edge_importance = None
-    od_car_edge_importance = None
-    bike_edge_betweenness_scores = None
-
-    paths_dirty = True
-    bike_graph_dirty = True
-
-    ev, state = _evaluate_current_state(
-        G_working,
+    ev, run.stop_state = _evaluate_current_state(
+        run.G_working,
         name=name,
         iteration=0,
         od=od,
         k_sample=k_sample,
-        diff_log=event_log,
-        state=state,
+        diff_log=run.event_log,
+        state=run.stop_state,
         clear_diff=False,
         dry_run=dry_run,
     )
-    evaluations.append(ev)
+    run.evaluations.append(ev)
 
     last_iteration = 0
 
     for i in tqdm(range(1, n_iterations + 1), desc=f"Iterations ({name})", unit="iter", leave=False):
         last_iteration = i
+        graphs = _build_iteration_graphs(run.G_working)
 
-        G_drive = graph_util.make_drive_subgraph(G_working)
-        G_bikeable = graph_util.make_bikeable_subgraph(G_working)
-        G_realloc = graph_util.make_reallocatable_subgraph(G_bikeable)
-        G_protected = graph_util.make_protected_subgraph(G_working)
-
-        if G_realloc.number_of_edges() == 0:
+        if graphs.G_realloc.number_of_edges() == 0:
             print(f"[stop] No reallocatable segments left for {name}, stopping early at iteration {i}")
             break
 
-        heuristic_name = heuristic_func.__name__
-        uses_od_scores = heuristic_name == "heuristic_od_segment_betweenness"
-        uses_betweenness_scores = heuristic_name == "heuristic_segment_betweenness_centrality"
-
-        if uses_od_scores:
-            refresh_paths = (
-                bike_paths is None
-                or car_paths is None
-                or i % EVALUATION_MOD == 0
-            )
-
-            if refresh_paths:
-                bike_paths = paths_util.compute_candidate_paths(
-                    G_bikeable,
-                    od,
-                    path_weight_metric="bike_cost_penalty",
-                )
-                car_paths = paths_util.compute_candidate_paths(
-                    G_drive,
-                    od,
-                    path_weight_metric="car_cost_current",
-                )
-
-                od_bike_edge_importance = paths_util.compute_edge_importance(
-                    G_bikeable,
-                    bike_paths,
-                )
-                od_car_edge_importance = paths_util.compute_edge_importance(
-                    G_drive,
-                    car_paths,
-                )
-
-        if uses_betweenness_scores and (bike_graph_dirty or bike_edge_betweenness_scores is None):
-            k_eff = None if k_sample is None else min(G_bikeable.number_of_nodes(), k_sample)
-
-            bike_edge_betweenness_scores = nx.edge_betweenness_centrality(
-                G_bikeable,
-                weight="bike_cost_penalty",
-                normalized=True,
-                k=k_eff,
-                seed=heuristic.SEED,
-                backend="parallel",
-            )
-
-        candidate_segments, _, _ = heuristic.get_candidate_segments(
-            G_realloc,
-            arc_to_seg=arc_to_seg,
-            seg_to_arcs=seg_to_arcs,
-        )
-
-        if not candidate_segments:
-            print(f"[stop] No reallocatable segments left for {name}, stopping early at iteration {i}")
-            break
-
-        keep_arc_policy = _keep_arc_policy_for_heuristic(heuristic_func)
-        keep_arc_scores = _keep_arc_scores_for_heuristic(
+        cache = _refresh_heuristic_cache(
+            cache,
             heuristic_func,
-            car_edge_importance=od_car_edge_importance,
-            edge_betweenness_scores=bike_edge_betweenness_scores,
-        )
-        candidate_actions = graph_util.build_segment_reallocation_actions(
-            G_working,
-            candidate_segments,
-            segment_inventory,
-            seg_to_arcs,
-            keep_arc_policy=keep_arc_policy,
-            keep_arc_scores=keep_arc_scores,
-            rng=rng,
-        )
-
-        segment_to_reallocate = _select_edge(
-            heuristic_func,
-            sig,
-            G_working,
-            G_drive,
-            G_bikeable,
-            G_realloc,
-            G_protected,
-            bike_paths,
-            car_paths,
-            beta,
+            graphs,
+            od,
+            i,
+            EVALUATION_MOD,
             k_sample,
-            arc_to_seg,
-            seg_to_arcs,
-            bike_edge_importance=od_bike_edge_importance,
-            car_edge_importance=od_car_edge_importance,
-            edge_betweenness_scores=bike_edge_betweenness_scores,
-            candidate_actions=candidate_actions,
-            rng=rng,
         )
 
-        if segment_to_reallocate is None:
+        choice = _choose_segment_to_reallocate(
+            run,
+            cache,
+            graphs,
+            heuristic_func,
+            k_sample,
+            beta,
+        )
+
+        if choice is None:
             print(f"[stop] No more valid segments left to reallocate for {name}")
             break
 
-        selected_action = candidate_actions.get(segment_to_reallocate)
-        if selected_action is None:
-            selected_action = graph_util.build_segment_reallocation_actions(
-                G_working,
-                [segment_to_reallocate],
-                segment_inventory,
-                seg_to_arcs,
-                keep_arc_policy=keep_arc_policy,
-                keep_arc_scores=keep_arc_scores,
-                rng=rng,
-            )[segment_to_reallocate]
-
-        keep_arc = selected_action.keep_arc
-
-        if graph_util.check_segment_reallocatable(
-            G_working,
-            segment_to_reallocate,
-            segment_inventory,
-            seg_to_arcs,
-            keep_arc=keep_arc,
-        ):
-            created_edges = graph_util.reallocate_segment_dedicated(
-                G_working,
-                segment_to_reallocate,
-                segment_inventory,
-                seg_to_arcs,
-                keep_arc=keep_arc,
-            )
-
-            paths_dirty = True
-            bike_graph_dirty = True
-
-            event_log.append({
-                "iteration": i,
-                "event_type": "reallocated_segment",
-                "segment": segment_to_reallocate,
-                "keep_arc": keep_arc,
-                "bike_arcs": selected_action.bike_arcs,
-                "lost_car_arcs": selected_action.lost_car_arcs,
-                "created_edges": created_edges,
-            })
-        else:
-            segment_inventory[segment_to_reallocate]["reallocatable"] = False
-
-            for u, v, k in seg_to_arcs[segment_to_reallocate]:
-                G_working[u][v][k]["reallocatable"] = False
-
-            graph_util.refresh_segment_reallocatable_flags(G_working, segment_inventory, seg_to_arcs)
-
-            paths_dirty = False
-            bike_graph_dirty = False
-
-            event_log.append({
-                "iteration": i,
-                "event_type": "marked_segment_not_reallocatable",
-                "segment": segment_to_reallocate,
-                "keep_arc": keep_arc,
-                "bike_arcs": selected_action.bike_arcs,
-                "lost_car_arcs": selected_action.lost_car_arcs,
-                "created_edges": None,
-            })
+        cache.bike_graph_dirty = _apply_segment_choice(run, choice, i)
 
         if i % EVALUATION_MOD == 0:
-            ev, state = _evaluate_current_state(
-                G_working,
+            ev, run.stop_state = _evaluate_current_state(
+                run.G_working,
                 name=name,
                 iteration=i,
                 od=od,
                 k_sample=k_sample,
-                diff_log=event_log,
-                state=state,
+                diff_log=run.event_log,
+                state=run.stop_state,
                 clear_diff=True,
                 dry_run=dry_run,
             )
-            stop, reason = _should_stop(ev, state)
+            stop, reason = _should_stop(ev, run.stop_state)
 
             if stop:
                 ev["stop_reason"] = reason
-                evaluations.append(ev)
+                run.evaluations.append(ev)
                 print(f"[stop] Stopping {name} at iteration {i}: {reason}")
                 break
 
-            evaluations.append(ev)
+            run.evaluations.append(ev)
 
-    if evaluations[-1]["iteration"] != last_iteration:
-        ev, state = _evaluate_current_state(
-            G_working,
+    if run.evaluations[-1]["iteration"] != last_iteration:
+        ev, run.stop_state = _evaluate_current_state(
+            run.G_working,
             name=name,
             iteration=last_iteration,
             od=od,
             k_sample=k_sample,
-            diff_log=event_log,
-            state=state,
+            diff_log=run.event_log,
+            state=run.stop_state,
             clear_diff=False,
             dry_run=dry_run,
         )
-        evaluations.append(ev)
+        run.evaluations.append(ev)
 
-    return G_working, evaluations
-
-def run_global(G_master, heuristic_func:Callable, od, subgraphs = None, EVALUATION_MOD = 10, n_iterations=10, k_sample = None, dry_run:bool=False, max_workers=None, parallel=True):
-    """Run heuristic on all subgraphs in parallel."""
-    
-    if not subgraphs:
-        subgraphs = {"MASTER": G_master}
-
-    tasks = [(name, G_sub_master, n_iterations, heuristic_func, k_sample, od, EVALUATION_MOD, dry_run)
-             for name, G_sub_master in subgraphs.items()]
-    evaluations = []
-    graphs = dict()
-
-    if not parallel:
-        for task in tqdm(tasks, desc="Processing localities", unit="loc"):
-            new_graph, locality_results = run_locality_task(task)
-            evaluations.extend(locality_results)
-            graphs[heuristic_func.__name__] = new_graph
-
-    if parallel:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(run_locality_task, task): task[0] for task in tasks}
-
-            with tqdm(total=len(futures), desc="Localities", unit="loc") as pbar:
-                for future in as_completed(futures):
-                    locality_name = futures[future]
-                    try:
-                        new_graph, locality_results = future.result()
-                        evaluations.extend(locality_results)
-                        graphs[heuristic_func.__name__] = new_graph
-                    except Exception as e:
-                        print(f"[failed] Locality {locality_name} failed: {e}")
-                    pbar.update(1)
-
-    evaluations_df = pd.DataFrame(evaluations)
-    return graphs, evaluations_df
+    evaluations_df = pd.DataFrame(run.evaluations)
+    return run.G_working, evaluations_df
