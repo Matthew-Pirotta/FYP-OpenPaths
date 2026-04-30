@@ -81,7 +81,7 @@ def plot_OD_points(
     if gdf_residential is not None:
         gdf_residential.plot(ax=ax, facecolor="lightblue", edgecolor="none", alpha=0.6)
         legend_handles.append(
-            mpatches.Patch(facecolor="lightblue", alpha=0.6, label="Residential Areas")
+            mpatches.Patch(facecolor="lightblue", alpha=0.6, label="Residential areas")
         )
 
     if gdf_destinations is not None:
@@ -99,7 +99,7 @@ def plot_OD_points(
                 marker="o",
                 linestyle="None",
                 markersize=8,
-                label="Destinations",
+                label="Destination opportunities",
             )
         )
 
@@ -165,8 +165,6 @@ def build_OD_lines_gdf(G, OD, *, use_weights=True):
     lines = []
     weights = []
 
-    #TODO
-    #for o, d, w in OD:
     for (o, d), w in OD.items():
         xo, yo = G.nodes[o]["x"], G.nodes[o]["y"]
         xd, yd = G.nodes[d]["x"], G.nodes[d]["y"]
@@ -257,6 +255,7 @@ def plot_population_heatmap_with_regions_and_roads(
     road_edge_color="black",
     road_edge_linewidth=0.4,
     road_alpha=0.5,
+    cbar_label="Allocated population weight"
 ):
     res = gdf_residential.copy()
     loc = gdf_localities.copy()
@@ -299,7 +298,7 @@ def plot_population_heatmap_with_regions_and_roads(
         alpha=0.85,
         legend=True,
         norm=norm,
-        legend_kwds={"label": plot_col, "shrink": 0.7},
+        legend_kwds={"label": cbar_label, "shrink": 0.7},
         zorder=2,
     )
 

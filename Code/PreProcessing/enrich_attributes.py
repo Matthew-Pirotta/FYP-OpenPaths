@@ -73,14 +73,15 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         data["safety"] = classification
         data["risk_factor"] = float(safety_to_risk_factor_map[classification])
 
+        """      
         # Dangerous roads should not be bikeable
         if classification == SafetyClass.HIGH_CAR_FLOW:
             #TODO NOTE this was set to false orginally, but was causing proble,s
             #I have now set it true, and made the bikeable subgraph reachable to all nodes
-            data["bike_allowed"] = True
+            data["bike_allowed"] = False
         else:
             data["bike_allowed"] = True
-
+        """
     return G
 
 

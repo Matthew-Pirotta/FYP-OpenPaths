@@ -56,13 +56,13 @@ def plot_metrics(df):
         color="tab:blue",
         scale=100.0,
     )
-    axs1[1].set_title("Share of demand reachable on bikeable network")
-    axs1[1].set_xlabel("Iteration")
-    axs1[1].set_ylabel("Reachable demand (%)")
-    axs1[1].yaxis.set_major_formatter(mticker.PercentFormatter())
-    axs1[1].grid(alpha=0.3)
+    axs1[2].set_title("Share of demand reachable on bikeable network")
+    axs1[2].set_xlabel("Iteration")
+    axs1[2].set_ylabel("Reachable demand (%)")
+    axs1[2].yaxis.set_major_formatter(mticker.PercentFormatter())
+    axs1[2].grid(alpha=0.3)
     if full_od_directness_col:
-        axs1[1].legend(fontsize=8)
+        axs1[2].legend(fontsize=8)
 
 
     
