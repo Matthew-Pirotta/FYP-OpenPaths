@@ -1,4 +1,3 @@
-#TODO cleanup class by seperating codings constants and config constants
 from enum import StrEnum, auto
 from collections import Counter
 

@@ -14,10 +14,6 @@ from Demand import paths_util
 import nx_parallel
 import constants
 
-#TODO THIS SHOULD BE IN THE MAIN CLASS?
-SEED = 12
-
-
 #TODO this doesnt need to saty but whatev
 def _iter_od_triples(od_data):
     if isinstance(od_data, Mapping):
@@ -82,9 +78,6 @@ def compute_od_costs(G: MultiDiGraph, OD_list, weight: str = "length") -> dict:
 
     return costs
 
-#TODO idk so many thoughts
-# is missing_demand and covered demand extra?
-# Technically could keep the whole bike network, and not just the largest protected bike?
 def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD_list,) -> dict:
     weighted_sum = 0.0
     covered_demand = 0.0
@@ -111,30 +104,6 @@ def calc_directness_from_costs( bike_costs: dict, drive_costs: dict, OD_list,) -
         "od_directness_mean": float(mean_directness),
         "od_directness_num_pairs": int(num_pairs),
     }
-
-
-def calc_centrality(G_lcc:MultiDiGraph, k_sample=None, seed = SEED, weight = "length") -> dict:
-    """Calculate comprehensive centrality metrics for cycling network assessment"""
-
-    #closeness_centrality - how close all other nodes are
-    #TODO temp just taking way too long
-    """
-    node_close_cent = nx.closeness_centrality(G_lcc, distance=weight )
-    mean_node_close_cent = float(np.mean(list(node_close_cent.values())))
-
-    degrees = [d for _, d in G_lcc.degree()]
-    mean_degree = float(np.mean(degrees))
-        
-    return {
-        "mean_node_closeness": mean_node_close_cent,
-        "mean_degree": mean_degree,
-    }
-    """
-    return {
-        "mean_node_closeness": 0,
-        "mean_degree": 0,
-    }
-
 
 def calc_coverage(G, buffer_m=500):
     """
@@ -221,7 +190,6 @@ def calc_total_cost_from_costs(
 def _evaluate_structure_metrics( G_target: MultiDiGraph, k_sample=None, prefix: str = "", include_union_geom: bool = True,) -> dict:
     metric_names = [ "num_components", "lcc_length", "mean_node_closeness", "mean_degree", "coverage_area_m2", "coverage_area_km2",]
 
-    #TODO this if condition seems like it should never be hit
     if G_target.number_of_nodes() == 0 or G_target.number_of_edges() == 0:
         results = {f"{prefix}{name}": 0.0 for name in metric_names}
         results[f"{prefix}num_components"] = 0
@@ -231,10 +199,9 @@ def _evaluate_structure_metrics( G_target: MultiDiGraph, k_sample=None, prefix: 
 
     G_lcc = largest_by_length(G_target)
     connectedness = calc_connectedness(G_target, G_lcc)
-    centrality = calc_centrality(G_lcc, k_sample=k_sample)
     coverage = calc_coverage(G_target)
 
-    results = {**connectedness, **centrality, **coverage}
+    results = {**connectedness, **coverage}
     if not include_union_geom:
         results.pop("union_geom", None)
 

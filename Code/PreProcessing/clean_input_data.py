@@ -119,7 +119,6 @@ def add_max_speed(G):
         "service": 30,       # Alleyways, parking lot access, etc.
     }
 
-    #TODO use the road type as fallback instead
     G = ox.add_edge_speeds(G, hwy_speeds=hwy_speeds, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
 
     for u, v, _, d in G.edges(keys=True, data=True):
@@ -224,20 +223,6 @@ def impute_missing_elevation(G:MultiDiGraph, max_iter=10) -> MultiDiGraph:
         print(f"Iteration {it+1}: imputed {changed} nodes")
         if changed == 0:
             break
-      
-    #TODO idk why man :Sob:
-    """         
-    print("node elevation",G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))
-    full_elevation = [d["elevation"] for _,d in G.nodes(data=True) 
-                      if (d["elevation"] is not None) and (not np.isnan(d["elevation"])) ]
-    median_elevation = np.median(full_elevation)
-    for node, data in G.nodes(data=True):
-            elev = data.get("elevation")
-            if np.isnan(elev) or elev is None:
-                print(f"NOde{node} elevation is problematic :/")
-                data["elevation"] = float(median_elevation)
-
-    print("node elevation", G.nodes[9068823240].get("elevation"), type(G.nodes[9068823240].get("elevation")))"""
     
     return G
 
@@ -256,7 +241,6 @@ def add_grades(G:MultiDiGraph):
 #endregion
 
 
-#TODO this is gonna cuase problems for sumo
 def ensure_bidirectional_bike(G_drive: MultiDiGraph):
     """
     Create a synthetic edge for bikes allowing for bidrectional flow
@@ -301,11 +285,6 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
 
 
 #region others
-
-#Although sumo internally checks for roundabouts as oneway during graph creation https://github.com/gboeing/osmnx/blob/main/osmnx/graph.py#L783#
-# This is only being used internally and not being set within the edge, <- NVM not true it actually is being set L850, but actually it wasnt being set when running the sumo sim cos of the settings.all_oneway
-# BUt if i need any of this depends if i keep sumo
-# TODO set the default oneway value to true?
 def set_roundabouts_oneway(G:MultiDiGraph):
     """This is done to prevent a lane being counterflow in roundabouts during the sumo simulation"""
     for u, v, k, d in G.edges(keys=True, data=True):

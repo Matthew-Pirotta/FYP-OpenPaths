@@ -43,13 +43,6 @@ def __create_master_graph(G_bike, G_drive, truncate_largest_component: bool = Tr
             if G_master.has_edge(u, v, k):
                 G_master[u][v][k]["car_allowed"] = True
 
-        """        
-        #TODO NOTE, truncate largest component on the unsimplified car network was too aggresive and lost a majoirty of the roads. Doing a scuffed fix
-        # initialize all master edges explicitly
-        for u, v, k, d in G_master.edges(keys=True, data=True):
-            if d.get("highway", "NA") in {"residential", "service", "tertiary", "secondary", "trunk"}:
-                G_master[u][v][k]["car_allowed"] = True
-        """
         # mark bike edges
         for u, v, k in G_bike.edges(keys=True):
             if G_master.has_edge(u, v, k):
@@ -66,14 +59,6 @@ def load_network(
         print(f"Loading OSM networks for {location}...")
         with _temporary_osmnx_all_oneway(all_oneway):
                 G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
-                #TODO further processing and setting of false
-
-                #TODO should be drive_service?
-                #NOTE we want the drive network to specfically be weakly connected and not strongly connected
-                # As strongly connected networks will fail for one way rounds such as mosta
-                # ^ this isnt true?
-                #TODO the graph should be strongly connected, but i remember testing that car network get super disconnected and u need many edges to fully connect it
-                #Most papers just say 'connected' without specifying strong or weak, but wiedmann explicity states strongly.
                 G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
         if truncate_largest_component:
                 G_drive = ox.truncate.largest_component(G_drive, strongly=True)

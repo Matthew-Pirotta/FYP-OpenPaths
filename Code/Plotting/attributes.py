@@ -35,9 +35,6 @@ def plot_elevation(G):
     fig.tight_layout()
     plt.show()
 
-
-#TODO use plot_graph_by_edge_attr instead
-#plot_graph_by_edge_attr(G, "grade", cmap=cmap, title="Spatial Grade Map", label="Edge Grade (%)")
 def plot_grades(G):
     grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True)]
 

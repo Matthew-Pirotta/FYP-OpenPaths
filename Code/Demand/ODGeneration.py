@@ -111,8 +111,6 @@ def gen_home_based_tour_counter(
 
     return od_counts
 
-#TODO im running the exact same od matrix for both cars and bikes and thus they are in the same quantity, idk if this is a problem tbh.
-#TODO seperate edge importance for cars and bikes? (i swear i had done this but idk)
 def gen_OD_trips(
     G,
     residential_sampling,

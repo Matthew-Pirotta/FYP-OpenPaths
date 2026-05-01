@@ -1,5 +1,3 @@
-#TODO idk if i should hava constants or ODutil idk
-
 from collections import defaultdict
 
 LOCALITY_TO_POPULATION = {
@@ -76,7 +74,6 @@ REGION_ORDER = [
     "Northern",
 ]
 
-#TODO store these as dataframes?
 PURPOSE_COUNTS_BY_DEST_REGION = {
     "Southern Harbour": {
         "education_and_escort_education": 9827,

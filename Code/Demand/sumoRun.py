@@ -17,7 +17,7 @@ def build_network(sim_dir, simulation_name, verbose):
         "--plain-output-prefix", f"{simulation_name}_plain",
         "--ramps.guess",
         "--junctions.join",
-        "--tls.guess-signals", #TODO get traffic signals from OSM
+        "--tls.guess-signals",
         "--tls.discard-simple",
         "--tls.join",
     ], cwd=sim_dir, capture_output=True, check=True, text=True)
@@ -106,7 +106,7 @@ def filter_bike_taz(sim_dir, simulation_name):
 
 
 def generate_trips(sim_dir, simulation_name, car_scale, bike_scale, verbose):
-    #TODO NOTE edges arent identical between networks?, so seperate OD start end points need to be generated
+    #NOTE edges arent identical between networks?, so seperate OD start end points need to be generated
     #Mainly due to the fact that some edges might not be accesible to bike/cars after reallocation differences
     #Although I think I could get away with sharing the same for everyone and just skip invalid routes?
     print("Running od2trips for cars")

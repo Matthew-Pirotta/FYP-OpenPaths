@@ -32,7 +32,7 @@ SIMPLIFY_SPEC = {
     "safety": lambda values: min(values, key=lambda x: enrich_attributes.safety_to_risk_factor_map.get(x, float("inf"))), #TODO check if this is functional
 
     #misc
-    "region": lambda vs: list(set(vs)), #TODO no this shoud now be a list of regions. we are no longer restricting to single region. The agg shoukd be the union
+    "region": lambda vs: list(set(vs)),
     "geometry": operator.itemgetter(0),
 }
 
@@ -103,7 +103,6 @@ def _segment_id(u, v, k = 0):
     return (min(u, v), max(u, v), k)
 
 
-#TODO move to a different class, or move the class
 def build_segment_graph(G: MultiDiGraph):
     """
     Build segment maps + undirected segment graph from a clean directed graph.

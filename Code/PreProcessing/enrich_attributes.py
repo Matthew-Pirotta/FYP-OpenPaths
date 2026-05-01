@@ -10,16 +10,14 @@ from constants import SafetyClass, InfraType, FIETSSTRAAT_SPEED_KMH
 from collections import Counter
 from shapely.geometry import Point
 
-
 safety_to_risk_factor_map = {
-    SafetyClass.PROTECTED: 0.5, 
-    SafetyClass.PAINTED: 1,
-    SafetyClass.LOW_CAR_FLOW: 2,#NOTE Cyclists perceive travel on car-dominated lanes as twice as costly
-    SafetyClass.HIGH_CAR_FLOW: 4,#TODO highway twice as costly ig?
-    SafetyClass.UNCLASSIFIED:2,
+    SafetyClass.PROTECTED: 1.0,
+    SafetyClass.PAINTED: 1.0,
+    SafetyClass.LOW_CAR_FLOW: 1.5,
+    SafetyClass.HIGH_CAR_FLOW: 2.0,
+    SafetyClass.UNCLASSIFIED: 2.0,
 }
 
-#TODO
 def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
     for _, _, data in G.edges(data=True):
 
@@ -73,19 +71,8 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
         data["safety"] = classification
         data["risk_factor"] = float(safety_to_risk_factor_map[classification])
 
-        """      
-        # Dangerous roads should not be bikeable
-        if classification == SafetyClass.HIGH_CAR_FLOW:
-            #TODO NOTE this was set to false orginally, but was causing proble,s
-            #I have now set it true, and made the bikeable subgraph reachable to all nodes
-            data["bike_allowed"] = False
-        else:
-            data["bike_allowed"] = True
-        """
     return G
 
-
-#TODO move to clean_input data?
 def load_and_clean_localities(G, place_name, locality_to_region) -> tuple[GeoDataFrame, GeoDataFrame]:
     """
     Fetch Malta localities (admin_level=8), clean them, then construct
@@ -185,24 +172,7 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
             d["reallocatable"] = False
             counters["roundabouts"] += 1
 
-        #TODO can remove
-        elif d.get("car_lanes", 0) <= 0:
-            d["reallocatable"] = False
-            counters["no_car_lanes"] += 1
-        
-        #Dont touch relativly safe roads
-        #TODO service?
-            """
-        elif d.get("highway") in {"track", "residential"}:
-            d["reallocatable"] = False
-            counters["highway type"] += 1"""
-
         # Can only reallocate where biking is allowed (i.e. not tunnels/highways)
-        #TODO NOTE this is temp reomced, as i am now allowing main roads?
-            """
-        elif d.get("bike_allowed", True) == False:
-            d["reallocatable"] = False
-            counters["no_bike_allowed"] += 1"""
 
         else:
             d["reallocatable"] = True
