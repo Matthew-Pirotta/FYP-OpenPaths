@@ -25,7 +25,6 @@ from .ODSampling import (
     sample_point_in_polygon,
 )
 from .paths_util import (
-    build_od_allowed_arcs,
     calculate_path_metrics,
     compute_candidate_paths,
     compute_edge_importance,

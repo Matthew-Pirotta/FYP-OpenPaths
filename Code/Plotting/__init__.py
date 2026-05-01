@@ -1,5 +1,5 @@
 from Plotting.renderer import draw_graph, plot_graph_by_edge_attr, PlotSettings
-from Plotting.network import plot_categorical_attr, plot_boolean_attribute, plot_od_allowed_corridor
+from Plotting.network import plot_categorical_attr, plot_boolean_attribute
 from Plotting.attributes import plot_elevation, plot_grades
 from Plotting.evolution import plot_snapshots, plot_network_evolution
 from Plotting.evaluation import plot_metrics, plot_od_investigation, plot_od_matrix_error
