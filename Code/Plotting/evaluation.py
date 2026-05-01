@@ -50,7 +50,7 @@ def plot_metrics(df):
 
     full_od_directness_col = _pick("full_od_directness_mean")
     _plot_if_exists(
-        axs1[1],
+        axs1[2],
         full_od_directness_col,
         label="Bikeable reachable demand share",
         color="tab:blue",

@@ -24,12 +24,14 @@ def _temporary_osmnx_all_oneway(all_oneway: bool | None):
                 ox.settings.all_oneway = previous
 
 
-def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
+def __create_master_graph(G_bike, G_drive, truncate_largest_component: bool = True,) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
         print("creating master graph network...")
         #NOTE attributes from G_bike take precedent
         G_master = nx.compose(G_drive, G_bike)
-        G_master = ox.truncate.largest_component(G_master, strongly=True) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
+
+        if truncate_largest_component:
+            G_master = ox.truncate.largest_component(G_master, strongly=True) # NOTE we kept all the disconnected networks in the subgraphs but the master network will only contain the lcc, since we cant add roads and only change they will never be reachable
 
         # initialize all master edges explicitly
         for u, v, k in G_master.edges(keys=True):
@@ -55,7 +57,12 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
 
         return G_master
 
-def load_network(location, simplify, all_oneway: bool | None = None) -> MultiDiGraph:
+def load_network(
+        location,
+        simplify,
+        all_oneway: bool | None = None,
+        truncate_largest_component: bool = True,
+) -> MultiDiGraph:
         print(f"Loading OSM networks for {location}...")
         with _temporary_osmnx_all_oneway(all_oneway):
                 G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
@@ -68,21 +75,32 @@ def load_network(location, simplify, all_oneway: bool | None = None) -> MultiDiG
                 #TODO the graph should be strongly connected, but i remember testing that car network get super disconnected and u need many edges to fully connect it
                 #Most papers just say 'connected' without specifying strong or weak, but wiedmann explicity states strongly.
                 G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
-        G_drive = ox.truncate.largest_component(G_drive, strongly=True)
+        if truncate_largest_component:
+                G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         
-        G_master = __create_master_graph(G_bike, G_drive)
+        G_master = __create_master_graph(G_bike, G_drive, truncate_largest_component)
         
         return G_master
 
 
 def load_optimisation_network(location, simplify: bool = True) -> MultiDiGraph:
     """Load the graph variant used by the optimiser."""
-    return load_network(location, simplify=simplify, all_oneway=False)
+    return load_network(
+        location,
+        simplify=simplify,
+        all_oneway=False,
+        truncate_largest_component=True,
+    )
 
 
 def load_sumo_network(location, simplify: bool = False) -> MultiDiGraph:
     """Load the unsimplified all-oneway graph variant required for SUMO XML."""
-    return load_network(location, simplify=simplify, all_oneway=True)
+    return load_network(
+        location,
+        simplify=simplify,
+        all_oneway=True,
+        truncate_largest_component=False,
+    )
 
 
 def save_sumo_osm_xml(G: MultiDiGraph, filepath, **kwargs):
