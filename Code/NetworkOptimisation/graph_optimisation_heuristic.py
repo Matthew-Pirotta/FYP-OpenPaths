@@ -329,10 +329,12 @@ def _refresh_heuristic_cache(
             cache.od_bike_edge_importance = paths_util.compute_edge_importance(
                 graphs.G_bikeable,
                 cache.bike_paths,
+                "bike_cost_penalty"
             )
             cache.od_car_edge_importance = paths_util.compute_edge_importance(
                 graphs.G_drive,
                 cache.car_paths,
+                "car_cost_current"
             )
 
     if (

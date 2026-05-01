@@ -22,18 +22,14 @@ def merge_semantically_equivalent_road_tags(G:MultiDiGraph):
     "living_street": "residential",
     "unclassified": "residential",
     
-    """# Access / minor roads
-    "track": "service",""" #TODO
+    # Access / minor roads
+    "track": "service",
     
     # Non-motorised
     "footway": "non_motorised",
     "pedestrian": "non_motorised",
     "path": "non_motorised",
-    "busway": "non_motorised"  # often bus-priority corridor #TODO?
-    }
-
-    cycle_equivalence = {
-        "shared_lane" #TODO????
+    "busway": "non_motorised"
     }
     
     for _,_, data in G.edges(data=True):
@@ -165,13 +161,11 @@ def standardise_edge_atr(G):
             car_lanes = clean_lanes(car_lanes)
         d["car_lanes"] = car_lanes
 
-        #TODO idk if this is correct
-        bike_lanes = 1
+        bike_lanes = 0
         if d.get("bike_allowed", False):
-            bike_lanes = d.get("lanes", 1)
+            bike_lanes = d.get("lanes", 0)
             bike_lanes = clean_lanes(bike_lanes)
         d["bike_lanes"] = bike_lanes
-        #TODO IDK d["bike_lanes"] = 2 if d.get("safety") == SafetyClass.VERY_SAFE else 0
 
         # remove old 'lanes' tag
         if "lanes" in d:

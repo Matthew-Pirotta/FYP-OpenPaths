@@ -101,9 +101,9 @@ def heuristic_od_segment_betweenness(
         return None
 
     if bike_edge_importance is None:
-        bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths)
+        bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths, "bike_cost_penalty", )
     if car_edge_importance is None:
-        car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths)
+        car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths, "car_cost_current",)
 
     seg_scores = {}
     for seg_id in candidate_segments:

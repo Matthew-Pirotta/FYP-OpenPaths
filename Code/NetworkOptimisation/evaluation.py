@@ -14,7 +14,6 @@ from Demand import paths_util
 import nx_parallel
 import constants
 
-#TODO this doesnt need to saty but whatev
 def _iter_od_triples(od_data):
     if isinstance(od_data, Mapping):
         rows = ((o, d, w) for (o, d), w in od_data.items())

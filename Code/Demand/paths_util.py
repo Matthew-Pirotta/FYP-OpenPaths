@@ -7,25 +7,35 @@ from networkx import MultiDiGraph
 import graph_util
 import nx_parallel
 
+def _best_edge_key(G, u, v, weight_attr):
+    edges = G[u][v]
 
-#TODO depricated
+    k = min(
+        edges,
+        key=lambda key: edges[key].get(weight_attr, float("inf"))
+    )
+
+    if weight_attr not in edges[k]:
+        raise ValueError(
+            f"No valid '{weight_attr}' found on any edge between {u} and {v}."
+        )
+
+    return k
+
 def total_cost_from_paths(G, paths, weight_attr):
     total = 0.0
+
     for (o, d, w), path in paths.items():
         cost = 0.0
+
         for u, v in zip(path[:-1], path[1:]):
-            # Pick the minimum-weight edge among all parallel edges
-            edge_data = G[u][v]
-            cost += min(
-                data[weight_attr]
-                for data in edge_data.values()
-            )
+            k = _best_edge_key(G, u, v, weight_attr)
+            cost += G[u][v][k][weight_attr]
+
         total += w * cost
+
     return total
 
-#TODO these generated paths do not provide the K key, there are two solutions
-#1. k = min(edges, key=lambda x: edges[x].get(weight_attr, float('inf')))
-#2. convert to digraph, extra benefit of being able to use cupgraph, nvm that wont really work
 def _iter_od_triples(od_data):
     if isinstance(od_data, Mapping):
         rows = ((o, d, w) for (o, d), w in od_data.items())
@@ -81,17 +91,20 @@ def calculate_path_metrics(G, od_trips, weight_attr="length"):
         
     return total_cost / total_relevant_trips
 
-
-#TODO this should be on the actual k
-def compute_edge_importance(G, paths):
+def compute_edge_importance(G, paths, weight_attr = "length"):
     """
     Compute weighted edge importance from OD shortest paths.
+
+    For each consecutive node pair in each path, the function assigns
+    the OD weight to the lowest-cost parallel edge according to weight_attr.
 
     Parameters
     ----------
     G : networkx.MultiDiGraph
     paths : dict
         {(o, d, w): [n0, n1, ..., nk]}
+    weight_attr : str
+        Edge attribute used to choose among parallel edges.
 
     Returns
     -------
@@ -101,14 +114,11 @@ def compute_edge_importance(G, paths):
     edge_importance = Counter()
 
     for (o, d, w), path in paths.items():
-        for i in range(len(path) - 1):
-            u, v = path[i], path[i + 1]
-            k = 0
-
+        for u, v in zip(path[:-1], path[1:]):
+            k = _best_edge_key(G, u, v, weight_attr)
             edge_importance[(u, v, k)] += w
 
     return edge_importance
-
 
 #NOTE Use G_seg (undirected segment graph) for corridor expansion because it approximates “nearby streets” without directionality headaches
 def _path_to_arcs(path: list[int]) -> list[Arc]:

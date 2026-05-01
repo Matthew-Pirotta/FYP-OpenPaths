@@ -13,7 +13,7 @@ class SafetyClass(StrEnum):
 
 class InfraType(StrEnum):
     CAR = auto() # Car only road
-    BIKE_LANE = auto() # painted #TODO see how im handling painted lanes
+    BIKE_LANE = auto() # painted
     CYCLE_TRACK = auto() #physically separated
     FIETSSTRAAT = auto() #shared but bike priority
 

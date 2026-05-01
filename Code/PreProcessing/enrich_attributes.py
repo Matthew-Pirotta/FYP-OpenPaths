@@ -159,8 +159,9 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
             counters["bridge"] += 1
 
         # Never touch protected cycle tracks
-        elif d.get("infra_type") == InfraType.CYCLE_TRACK:
+        elif d.get("infra_type") in {InfraType.CYCLE_TRACK, InfraType.BIKE_LANE}:
             d["reallocatable"] = False
+            counters["Existing Bike Infra"] += 1
 
         # Can only reallocate from car lanes
         elif d.get("car_allowed", False) == False:

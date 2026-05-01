@@ -34,7 +34,6 @@ def _hex_to_sumo_rgb(hex_color):
     r,g,b = rgb
     return f"{r},{g},{b}"
 
-#TODO should prob just do this globally tbh, Altough tbh the names to come pretty ugly then
 def sumo_safe_id(name: str) -> str:
     # convert accented characters → ascii
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
