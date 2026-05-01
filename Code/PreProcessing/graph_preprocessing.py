@@ -1,4 +1,5 @@
 from networkx import MultiDiGraph
+from contextlib import contextmanager
 import osmnx as ox
 import networkx as nx
 import numpy as np
@@ -7,6 +8,21 @@ from . import clean_input_data, enrich_attributes, graph_structure
 from NetworkOptimisation import impedance_calculator
 import graph_util
 import constants
+
+
+@contextmanager
+def _temporary_osmnx_all_oneway(all_oneway: bool | None):
+        if all_oneway is None:
+                yield
+                return
+
+        previous = ox.settings.all_oneway
+        ox.settings.all_oneway = all_oneway
+        try:
+                yield
+        finally:
+                ox.settings.all_oneway = previous
+
 
 def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
         """Combine bike and drive networks into one multimodal master graph."""
@@ -39,23 +55,45 @@ def __create_master_graph(G_bike, G_drive) -> MultiDiGraph:
 
         return G_master
 
-def load_network(location, simplify) -> MultiDiGraph:
+def load_network(location, simplify, all_oneway: bool | None = None) -> MultiDiGraph:
         print(f"Loading OSM networks for {location}...")
-        G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
-        #TODO further processing and setting of false
+        with _temporary_osmnx_all_oneway(all_oneway):
+                G_bike = ox.graph_from_place(location, network_type="bike", simplify=simplify, retain_all=False)
+                #TODO further processing and setting of false
 
-        #TODO should be drive_service?
-        #NOTE we want the drive network to specfically be weakly connected and not strongly connected
-        # As strongly connected networks will fail for one way rounds such as mosta
-        # ^ this isnt true?
-        #TODO the graph should be strongly connected, but i remember testing that car network get super disconnected and u need many edges to fully connect it
-        #Most papers just say 'connected' without specifying strong or weak, but wiedmann explicity states strongly.
-        G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
+                #TODO should be drive_service?
+                #NOTE we want the drive network to specfically be weakly connected and not strongly connected
+                # As strongly connected networks will fail for one way rounds such as mosta
+                # ^ this isnt true?
+                #TODO the graph should be strongly connected, but i remember testing that car network get super disconnected and u need many edges to fully connect it
+                #Most papers just say 'connected' without specifying strong or weak, but wiedmann explicity states strongly.
+                G_drive = ox.graph_from_place(location, network_type="drive", simplify=simplify, retain_all=False)
         G_drive = ox.truncate.largest_component(G_drive, strongly=True)
         
         G_master = __create_master_graph(G_bike, G_drive)
         
         return G_master
+
+
+def load_optimisation_network(location, simplify: bool = True) -> MultiDiGraph:
+    """Load the graph variant used by the optimiser."""
+    return load_network(location, simplify=simplify, all_oneway=False)
+
+
+def load_sumo_network(location, simplify: bool = False) -> MultiDiGraph:
+    """Load the unsimplified all-oneway graph variant required for SUMO XML."""
+    return load_network(location, simplify=simplify, all_oneway=True)
+
+
+def save_sumo_osm_xml(G: MultiDiGraph, filepath, **kwargs):
+    """
+    Save a SUMO-facing OSM XML file with the OSMnx all_oneway setting isolated.
+
+    OSMnx checks the current global setting while saving, so keep it scoped here
+    as well as when loading the SUMO graph.
+    """
+    with _temporary_osmnx_all_oneway(True):
+        ox.save_graph_xml(G, filepath, **kwargs)
 
 
 def audit_elevation_and_grade(G, label=""):

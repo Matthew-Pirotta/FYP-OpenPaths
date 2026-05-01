@@ -21,7 +21,11 @@ SAFETY_TO_COLOR_MAP = {
 
 
 def _is_edge_like(value) -> bool:
-    return isinstance(value, (tuple, list)) and len(value) >= 3 and not isinstance(value[0], dict)
+    return (
+        isinstance(value, (tuple, list))
+        and len(value) >= 3
+        and not isinstance(value[0], (tuple, list, dict))
+    )
 
 
 def _normalise_diff_log(diff_log) -> list:
@@ -211,6 +215,7 @@ def plot_snapshots(
 
 def plot_network_evolution(G_master, diff_log, **kwargs:PlotSettings):
     """Plot incremental reallocations over time, colored by iteration."""
+    events = _normalise_diff_log(diff_log)
     
     # Merge defaults with overrides
     settings = renderer.DEFAULTS | kwargs
@@ -221,10 +226,20 @@ def plot_network_evolution(G_master, diff_log, **kwargs:PlotSettings):
     )
 
     cmap = plt.cm.plasma
-    norm = plt.Normalize(0, len(diff_log))
+    norm = plt.Normalize(0, max(1, len(events)))
 
-    for i, diff_data in enumerate(diff_log):
-        u, v, k = diff_data
+    for i, event in enumerate(events):
+        if (
+            isinstance(event, dict)
+            and event.get("event_type") == "marked_segment_not_reallocatable"
+        ):
+            continue
+
+        edge = _coerce_event_segment(event)
+        if edge is None:
+            continue
+
+        u, v, k = edge
         if not G_master.has_edge(u, v, k):
             continue
 

@@ -477,6 +477,7 @@ def _apply_segment_choice(
         "iteration": iteration,
         "event_type": event_type,
         "segment": choice.segment,
+        "remaining_after": choice.action.remaining_after,
         "keep_arc": keep_arc,
         "bike_arcs": choice.action.bike_arcs,
         "lost_car_arcs": choice.action.lost_car_arcs,
