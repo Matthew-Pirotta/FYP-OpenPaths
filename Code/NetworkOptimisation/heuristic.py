@@ -234,17 +234,72 @@ def heuristic_random(
 
 
 #region Component Heuristics
-def _find_bridge_path(G_master: MultiDiGraph, comp_a: set, comp_b: set) -> tuple[list, float]:
-    best_path, best_cost = None, float("inf")
+def _euclidean_distance(G: MultiDiGraph, u, v) -> float:
+    dx = G.nodes[u]["x"] - G.nodes[v]["x"]
+    dy = G.nodes[u]["y"] - G.nodes[v]["y"]
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _find_bridge_path(
+    G_master: MultiDiGraph,
+    comp_a: set,
+    comp_b: set,
+    max_pairs: int = 5,
+) -> tuple[list | None, float]:
+    """
+    Approximate bridge path:
+    1. Rank component node pairs by straight-line distance.
+    2. Run network shortest path only for the closest max_pairs pairs.
+    3. Return the cheapest actual network path among those attempts.
+    """
+    if not comp_a or not comp_b:
+        return None, float("inf")
+
+    # Step 1: compute straight-line distances between component node pairs
+    candidate_pairs = []
+
     for a in comp_a:
+        if a not in G_master:
+            continue
+
         for b in comp_b:
-            try:
-                path = nx.shortest_path(G_master, a, b, weight="length")
-                cost = nx.path_weight(G_master, path, weight="length")
-                if cost < best_cost:
-                    best_cost, best_path = cost, path
-            except nx.NetworkXNoPath:
+            if b not in G_master:
                 continue
+
+            dist = _euclidean_distance(G_master, a, b)
+            candidate_pairs.append((dist, a, b))
+
+    if not candidate_pairs:
+        return None, float("inf")
+
+    # Step 2: try only the closest pairs
+    candidate_pairs.sort(key=lambda item: item[0])
+    candidate_pairs = candidate_pairs[:max_pairs]
+
+    best_path = None
+    best_cost = float("inf")
+
+    for _, a, b in candidate_pairs:
+        try:
+            path = nx.shortest_path(
+                G_master,
+                source=a,
+                target=b,
+                weight="length",
+            )
+            cost = nx.path_weight(
+                G_master,
+                path,
+                weight="length",
+            )
+
+            if cost < best_cost:
+                best_cost = cost
+                best_path = path
+
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            continue
+
     return best_path, best_cost
 
 

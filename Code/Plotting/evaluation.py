@@ -8,6 +8,7 @@ MODEL_STYLES = (
     ("Model A", {"color": "tab:blue", "linestyle": "-", "marker": "o"}),
     ("Model B", {"color": "tab:orange", "linestyle": "--", "marker": "s"}),
     ("Model C", {"color": "tab:green", "linestyle": ":", "marker": "^"}),
+    ("Model D", {"color": "tab:red", "linestyle": "-.", "marker": "D"}),
 )
 MODEL_STYLE_BY_LABEL = dict(MODEL_STYLES)
 
@@ -106,31 +107,27 @@ def _pick_col(df, *cols):
 
 def _metric_groups(df, model_col):
     if model_col is None:
-        return [("Model A", _sort_metric_run(df), MODEL_STYLES[0][1])]
+        return [("Run", _sort_metric_run(df), MODEL_STYLES[0][1])]
 
     model_values = list(dict.fromkeys(df[model_col].dropna()))
+
     if not model_values:
-        return [("Model A", _sort_metric_run(df), MODEL_STYLES[0][1])]
+        return [("Run", _sort_metric_run(df), MODEL_STYLES[0][1])]
+
     if len(model_values) > len(MODEL_STYLES):
-        raise ValueError("plot_metrics supports up to three models: Model A, Model B, and Model C.")
+        raise ValueError(
+            f"plot_metrics supports up to {len(MODEL_STYLES)} models, "
+            f"but received {len(model_values)}."
+        )
 
     groups = []
 
-    if all(str(model_value) in MODEL_STYLE_BY_LABEL for model_value in model_values):
-        for model_label, style in MODEL_STYLES:
-            if model_label not in model_values:
-                continue
-            run = df[df[model_col] == model_label]
-            groups.append((model_label, _sort_metric_run(run), style))
-        return groups
-
-    for idx, model_value in enumerate(model_values[: len(MODEL_STYLES)]):
-        model_label, style = MODEL_STYLES[idx]
+    for idx, model_value in enumerate(model_values):
+        _, style = MODEL_STYLES[idx]
         run = df[df[model_col] == model_value]
-        groups.append((model_label, _sort_metric_run(run), style))
+        groups.append((str(model_value), _sort_metric_run(run), style))
 
     return groups
-
 
 def _sort_metric_run(run):
     if "iteration" in run.columns:

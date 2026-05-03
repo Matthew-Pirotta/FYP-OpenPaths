@@ -157,7 +157,17 @@ def _should_stop(ev: dict, state: StopState) -> tuple[bool, str | None]:
 
     return False, None
 
-def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od,k_sample,diff_log: list,state: StopState,clear_diff:bool = False, dry_run:bool=False) -> tuple[dict, StopState]:
+def _evaluate_current_state(
+    G_master: MultiDiGraph,
+    *,
+    iteration: int,
+    od,
+    k_sample,
+    diff_log: list,
+    state: StopState,
+    clear_diff: bool = False,
+    dry_run: bool = False,
+) -> tuple[dict, StopState]:
     """
     Build one evaluation snapshot for the current graph state.
     """
@@ -166,7 +176,6 @@ def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od
         ev = {
             "full_od_total_bike_cost": 0.0,
             "car_od_total_car_cost": 0.0,
-            "locality": name,
             "iteration": iteration,
             "diff_log": list(diff_log),
             "stop_reason": None,
@@ -188,7 +197,6 @@ def _evaluate_current_state(G_master: MultiDiGraph,*,name: str,iteration: int,od
         k_sample=k_sample,
     )
 
-    ev["locality"] = name
     ev["iteration"] = iteration
     ev["diff_log"] = list(diff_log)
     ev["stop_reason"] = None
@@ -337,20 +345,24 @@ def _refresh_heuristic_cache(
                 "car_cost_current"
             )
 
-    if (
-        heuristic_name == "heuristic_segment_betweenness_centrality"
-        and (cache.bike_graph_dirty or cache.bike_edge_betweenness_scores is None)
-    ):
-        k_eff = None if k_sample is None else min(graphs.G_bikeable.number_of_nodes(), k_sample)
-
-        cache.bike_edge_betweenness_scores = nx.edge_betweenness_centrality(
-            graphs.G_bikeable,
-            weight="bike_cost_penalty",
-            normalized=True,
-            k=k_eff,
-            seed=heuristic.SEED,
-            backend="parallel",
+    if heuristic_name == "heuristic_segment_betweenness_centrality":
+        refresh_paths = (
+            cache.bike_edge_betweenness_scores is None
+            or iteration % EVALUATION_MOD == 0
         )
+
+        if refresh_paths:
+            k_eff = None if k_sample is None else min(graphs.G_bikeable.number_of_nodes(), k_sample)
+
+            cache.bike_edge_betweenness_scores = nx.edge_betweenness_centrality(
+                graphs.G_bikeable,
+                weight="bike_cost_penalty",
+                normalized=True,
+                k=k_eff,
+                seed=heuristic.SEED,
+                backend="parallel",
+            )
+            cache.bike_graph_dirty = False
 
     return cache
 
@@ -493,22 +505,21 @@ def run_optimisation(
     G_master: MultiDiGraph,
     heuristic_func: Callable,
     od,
+    heuristic_name:str,
     EVALUATION_MOD=10,
     n_iterations=10,
     k_sample=None,
     dry_run: bool = False,
-    name: str = "MASTER",
 ):
     """Run heuristic optimisation on one main graph."""
 
-    print(f"[start] Starting {name}")
+    print(f"[start] Starting {heuristic_name}")
     run = _setup_optimisation_run(G_master, heuristic_func)
     cache = HeuristicCache()
     beta = 1.0
 
     ev, run.stop_state = _evaluate_current_state(
         run.G_working,
-        name=name,
         iteration=0,
         od=od,
         k_sample=k_sample,
@@ -521,12 +532,12 @@ def run_optimisation(
 
     last_iteration = 0
 
-    for i in tqdm(range(1, n_iterations + 1), desc=f"Iterations ({name})", unit="iter", leave=False):
+    for i in tqdm(range(1, n_iterations + 1), desc=f"Iterations ({heuristic_name})", unit="iter", leave=False):
         last_iteration = i
         graphs = _build_iteration_graphs(run.G_working)
 
         if graphs.G_realloc.number_of_edges() == 0:
-            print(f"[stop] No reallocatable segments left for {name}, stopping early at iteration {i}")
+            print(f"[stop] No reallocatable segments left for {heuristic_name}, stopping early at iteration {i}")
             break
 
         cache = _refresh_heuristic_cache(
@@ -549,7 +560,7 @@ def run_optimisation(
         )
 
         if choice is None:
-            print(f"[stop] No more valid segments left to reallocate for {name}")
+            print(f"[stop] No more valid segments left to reallocate for {heuristic_name}")
             break
 
         cache.bike_graph_dirty = _apply_segment_choice(run, choice, i)
@@ -557,7 +568,6 @@ def run_optimisation(
         if i % EVALUATION_MOD == 0:
             ev, run.stop_state = _evaluate_current_state(
                 run.G_working,
-                name=name,
                 iteration=i,
                 od=od,
                 k_sample=k_sample,
@@ -571,7 +581,7 @@ def run_optimisation(
             if stop:
                 ev["stop_reason"] = reason
                 run.evaluations.append(ev)
-                print(f"[stop] Stopping {name} at iteration {i}: {reason}")
+                print(f"[stop] Stopping {heuristic_name} at iteration {i}: {reason}")
                 break
 
             run.evaluations.append(ev)
@@ -579,7 +589,6 @@ def run_optimisation(
     if run.evaluations[-1]["iteration"] != last_iteration:
         ev, run.stop_state = _evaluate_current_state(
             run.G_working,
-            name=name,
             iteration=last_iteration,
             od=od,
             k_sample=k_sample,

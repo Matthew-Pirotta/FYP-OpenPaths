@@ -49,8 +49,9 @@ def plot_grades(G):
         bins=40,
         cmap=cmap,
         norm=norm,
-        title="Road Grades",
-        xlabel="Grade",
+        title="Distribution of road grades",
+        xlabel="Edge grade",
+        ylabel="Number of edges",
     )
     ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
 
