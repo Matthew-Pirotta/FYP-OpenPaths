@@ -150,11 +150,11 @@ def run_router(sim_dir, simulation_name, mode, verbose):
         "--ignore-errors"
     ], cwd=sim_dir, capture_output=True, check=True, text=True)
 
-def run_sumo(sim_dir, verbose):
+def run_sumo(sim_dir, simulation_name, verbose):
     print("Running simulation")
     subprocess.run([
         "sumo",
-        "-c", "Malta.sumocfg",
+        "-c", f"{simulation_name}.sumocfg",
     ],cwd=sim_dir, capture_output=True, check=True, text=True)
 
 
@@ -183,6 +183,6 @@ def run_simulation(simulation_name:str, car_scale:float, bike_scale:float,
         run_router(sim_dir, simulation_name, "bikes", verbose)
 
     if should_execute_sim:
-        run_sumo(sim_dir, verbose)
+        run_sumo(sim_dir, simulation_name, verbose)
 
 

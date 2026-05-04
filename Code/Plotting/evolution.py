@@ -2,6 +2,7 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.colors import to_rgba
 import graph_util
 
 from Plotting import renderer
@@ -80,7 +81,7 @@ def _normalise_safety(value):
 def _apply_snapshot_event(G, event, segment_inventory, seg_to_arcs):
     segment = _coerce_event_segment(event)
     if segment is None:
-        return
+        return []
 
     event_type = (
         event.get("event_type", "reallocated_segment")
@@ -100,9 +101,9 @@ def _apply_snapshot_event(G, event, segment_inventory, seg_to_arcs):
         for u, v, k in seg_to_arcs[segment]:
             if G.has_edge(u, v, k):
                 G[u][v][k]["reallocatable"] = False
-        return
+        return []
 
-    graph_util.reallocate_segment_dedicated(
+    return graph_util.reallocate_segment_dedicated(
         G,
         segment,
         segment_inventory,
@@ -211,6 +212,129 @@ def plot_snapshots(
         plt.show()
 
     return fig, axs
+
+
+def _plot_edge_geometry(ax, G, edge, *, color, linewidth, alpha=1.0, zorder=3):
+    u, v, k = edge
+    if not G.has_edge(u, v, k):
+        return
+
+    data = G[u][v][k]
+    geom = data.get("geometry")
+
+    if geom is None:
+        x = [G.nodes[u]["x"], G.nodes[v]["x"]]
+        y = [G.nodes[u]["y"], G.nodes[v]["y"]]
+        ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, zorder=zorder)
+        return
+
+    geoms = getattr(geom, "geoms", [geom])
+    for line in geoms:
+        x, y = line.xy
+        ax.plot(x, y, color=color, linewidth=linewidth, alpha=alpha, zorder=zorder)
+
+
+def plot_proposed_cycling_network(
+    G_master,
+    G_optimised,
+    *,
+    initial_safety_classes=None,
+    initial_color="#0072B2",
+    proposed_color="#D55E00",
+    other_color="#aaaaaa",
+    initial_linewidth=1.4,
+    proposed_linewidth=1.8,
+    other_linewidth=0.35,
+    initial_alpha=0.95,
+    proposed_alpha=1.0,
+    other_alpha=0.7,
+    title="Initial and Proposed Cycling Network",
+    legend=True,
+    show=True,
+    **kwargs: PlotSettings,
+):
+    """
+    Plot the original cycling network, newly proposed cycling infrastructure,
+    and all other network edges.
+
+    Newly proposed infrastructure is inferred by set difference:
+    cycling edges in G_optimised minus cycling edges in G_master.
+
+    By default, cycling edges follow this project's protected subgraph
+    convention: SafetyClass.PROTECTED and SafetyClass.PAINTED.
+    Pass initial_safety_classes=(SafetyClass.PROTECTED,) for strictly protected
+    infrastructure only.
+    """
+    if initial_safety_classes is None:
+        initial_safety_classes = {SafetyClass.PROTECTED, SafetyClass.PAINTED}
+    else:
+        initial_safety_classes = {
+            _normalise_safety(cls)
+            for cls in initial_safety_classes
+        }
+
+    master_cycling_edges = {
+        (u, v, k)
+        for u, v, k, d in G_master.edges(keys=True, data=True)
+        if _normalise_safety(d.get("safety")) in initial_safety_classes
+    }
+
+    optimised_cycling_edges = {
+        (u, v, k)
+        for u, v, k, d in G_optimised.edges(keys=True, data=True)
+        if _normalise_safety(d.get("safety")) in initial_safety_classes
+    }
+
+    optimised_edge_keys = set(G_optimised.edges(keys=True))
+    initial_edges = master_cycling_edges & optimised_edge_keys
+    proposed_edges = optimised_cycling_edges - master_cycling_edges
+
+    draw_kwargs = dict(kwargs)
+    draw_kwargs.setdefault("node_size", 0)
+    draw_kwargs["edge_color"] = to_rgba(other_color, other_alpha)
+    draw_kwargs["edge_linewidth"] = other_linewidth
+
+    fig, ax = renderer.draw_graph(G_optimised, **draw_kwargs)
+
+    for edge in initial_edges:
+        _plot_edge_geometry(
+            ax,
+            G_optimised,
+            edge,
+            color=initial_color,
+            linewidth=initial_linewidth,
+            alpha=initial_alpha,
+            zorder=3,
+        )
+
+    for edge in proposed_edges:
+        _plot_edge_geometry(
+            ax,
+            G_optimised,
+            edge,
+            color=proposed_color,
+            linewidth=proposed_linewidth,
+            alpha=proposed_alpha,
+            zorder=4,
+        )
+
+    if title:
+        ax.set_title(title)
+
+    if legend:
+        legend_elements = [
+            mpatches.Patch(color=initial_color, label="Initial cycling network"),
+            mpatches.Patch(color=proposed_color, label="Proposed cycling infrastructure"),
+            mpatches.Patch(color=other_color, label="Other network"),
+        ]
+        ax.legend(handles=legend_elements, loc="lower right", fontsize=8)
+
+    ax.axis("off")
+    fig.tight_layout()
+    if show:
+        plt.show()
+
+    return fig, ax
 
 
 def plot_network_evolution(G_master, diff_log, **kwargs:PlotSettings):

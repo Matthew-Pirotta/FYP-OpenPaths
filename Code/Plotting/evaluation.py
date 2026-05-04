@@ -31,7 +31,7 @@ def plot_metrics(df):
 
     # Figure 1: Bike-car trade-off scatter.
     fig1, ax1 = plt.subplots(figsize=(7.5, 5.5))
-    ax1.set_title("Figure 1: Bike gain vs car harm")
+    ax1.set_title("Bike gain vs car harm")
     ax1.set_xlabel("Car harm vs baseline (%)")
     ax1.set_ylabel("Bike gain vs baseline (%)")
     ax1.axhline(0, color="0.75", linewidth=1)
@@ -61,7 +61,7 @@ def plot_metrics(df):
         ax2,
         groups,
         directness_col,
-        title="Figure 2: Demand-weighted directness",
+        title="Demand-weighted directness",
         ylabel="Directness (drive/bike)",
     )
     fig2.tight_layout()
@@ -77,7 +77,7 @@ def plot_metrics(df):
         ax3,
         groups,
         coverage_col,
-        title="Figure 3: Coverage",
+        title="Coverage",
         ylabel=coverage_ylabel,
         scale=coverage_scale,
     )
@@ -89,7 +89,7 @@ def plot_metrics(df):
         ax4,
         groups,
         protected_lcc_col,
-        title="Figure 4: Protected LCC length",
+        title="Protected LCC length",
         ylabel="Protected LCC length (km)",
         scale=1.0 / 1000.0,
     )

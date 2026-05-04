@@ -4,6 +4,7 @@ import re
 import sumolib
 import geopandas as gpd
 import copy
+from pathlib import Path
 
 def write_taz_polygons(gdf_localities, outfile):
     with open(outfile, "w", encoding="utf-8") as f:
@@ -66,7 +67,30 @@ def sumo_safe_shift_polygons(net, gdf):
     return gdf_shifted
 
 
-def write_od_matrix(od_timeline_tables, outfile):
+def make_sumo_safe_od_table(od_table):
+    od_table = od_table.copy()
+    od_table.index = od_table.index.map(sumo_safe_id)
+    od_table.columns = od_table.columns.map(sumo_safe_id)
+
+    # If two labels collapse to the same SUMO-safe ID, keep the flow mass.
+    od_table = od_table.groupby(level=0).sum()
+    od_table = od_table.T.groupby(level=0).sum().T
+
+    return od_table
+
+
+def make_sumo_safe_od_timeline_tables(od_timeline_tables):
+    safe_tables = []
+
+    for interval in od_timeline_tables:
+        safe_interval = dict(interval)
+        safe_interval["od_table"] = make_sumo_safe_od_table(interval["od_table"])
+        safe_tables.append(safe_interval)
+
+    return safe_tables
+
+
+def write_od_matrix(od_timeline_tables, outfile, *, safe_ids=False):
     """
     Write SUMO OD matrix from region OD tables.
 
@@ -76,7 +100,11 @@ def write_od_matrix(od_timeline_tables, outfile):
         Output from build_region_od_tables_from_timeline()
     outfile : str
         Path to od_matrix.xml
+    safe_ids : bool
+        Convert origin/destination labels to SUMO-safe IDs before writing.
     """
+
+    Path(outfile).parent.mkdir(parents=True, exist_ok=True)
 
     with open(outfile, "w") as f:
 
@@ -87,6 +115,8 @@ def write_od_matrix(od_timeline_tables, outfile):
             begin = interval["begin"]
             end = interval["end"]
             od_table = interval["od_table"]
+            if safe_ids:
+                od_table = make_sumo_safe_od_table(od_table)
 
             f.write(f'  <interval begin="{begin}" end="{end}">\n')
 
