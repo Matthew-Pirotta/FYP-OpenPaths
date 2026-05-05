@@ -239,14 +239,20 @@ def plot_proposed_cycling_network(
     G_optimised,
     *,
     initial_safety_classes=None,
-    initial_color="#0072B2",
-    proposed_color="#D55E00",
-    other_color="#aaaaaa",
+    initial_color="#7BC87A",        # light green — existing cycling
+    proposed_color="#1A6B2F",       # dark green — new additions
+    initial_fixed_color="#F3BAA2",  # light orange-red — fixed existing
+    newly_fixed_color="#C0242A",    # strong red — newly fixed
+    other_color="#CDC8C2",         
     initial_linewidth=1.4,
     proposed_linewidth=1.8,
+    initial_fixed_linewidth=0.8,
+    newly_fixed_linewidth=1.2,
     other_linewidth=0.35,
     initial_alpha=0.95,
     proposed_alpha=1.0,
+    initial_fixed_alpha=0.8,
+    newly_fixed_alpha=1.0,
     other_alpha=0.7,
     title="Initial and Proposed Cycling Network",
     legend=True,
@@ -255,10 +261,14 @@ def plot_proposed_cycling_network(
 ):
     """
     Plot the original cycling network, newly proposed cycling infrastructure,
-    and all other network edges.
+    fixed non-reallocatable road edges, and all other network edges.
 
     Newly proposed infrastructure is inferred by set difference:
     cycling edges in G_optimised minus cycling edges in G_master.
+
+    Fixed edges are road edges marked ``reallocatable=False``. Initial fixed
+    edges were already fixed in G_master. Newly fixed edges were reallocatable
+    in G_master but are fixed in G_optimised.
 
     By default, cycling edges follow this project's protected subgraph
     convention: SafetyClass.PROTECTED and SafetyClass.PAINTED.
@@ -289,12 +299,53 @@ def plot_proposed_cycling_network(
     initial_edges = master_cycling_edges & optimised_edge_keys
     proposed_edges = optimised_cycling_edges - master_cycling_edges
 
+    master_fixed_edges = {
+        (u, v, k)
+        for u, v, k, d in G_master.edges(keys=True, data=True)
+        if d.get("reallocatable") is False and d.get("highway") != "cycleway"
+    }
+    master_reallocatable_edges = {
+        (u, v, k)
+        for u, v, k, d in G_master.edges(keys=True, data=True)
+        if d.get("reallocatable") is True and d.get("highway") != "cycleway"
+    }
+    optimised_fixed_edges = {
+        (u, v, k)
+        for u, v, k, d in G_optimised.edges(keys=True, data=True)
+        if d.get("reallocatable") is False and d.get("highway") != "cycleway"
+    }
+
+    initial_fixed_edges = master_fixed_edges & optimised_fixed_edges
+    newly_fixed_edges = master_reallocatable_edges & optimised_fixed_edges
+
     draw_kwargs = dict(kwargs)
     draw_kwargs.setdefault("node_size", 0)
     draw_kwargs["edge_color"] = to_rgba(other_color, other_alpha)
     draw_kwargs["edge_linewidth"] = other_linewidth
 
     fig, ax = renderer.draw_graph(G_optimised, **draw_kwargs)
+
+    for edge in initial_fixed_edges:
+        _plot_edge_geometry(
+            ax,
+            G_optimised,
+            edge,
+            color=initial_fixed_color,
+            linewidth=initial_fixed_linewidth,
+            alpha=initial_fixed_alpha,
+            zorder=2,
+        )
+
+    for edge in newly_fixed_edges:
+        _plot_edge_geometry(
+            ax,
+            G_optimised,
+            edge,
+            color=newly_fixed_color,
+            linewidth=newly_fixed_linewidth,
+            alpha=newly_fixed_alpha,
+            zorder=3,
+        )
 
     for edge in initial_edges:
         _plot_edge_geometry(
@@ -304,7 +355,7 @@ def plot_proposed_cycling_network(
             color=initial_color,
             linewidth=initial_linewidth,
             alpha=initial_alpha,
-            zorder=3,
+            zorder=4,
         )
 
     for edge in proposed_edges:
@@ -315,7 +366,7 @@ def plot_proposed_cycling_network(
             color=proposed_color,
             linewidth=proposed_linewidth,
             alpha=proposed_alpha,
-            zorder=4,
+            zorder=5,
         )
 
     if title:
@@ -325,6 +376,8 @@ def plot_proposed_cycling_network(
         legend_elements = [
             mpatches.Patch(color=initial_color, label="Initial cycling network"),
             mpatches.Patch(color=proposed_color, label="Proposed cycling infrastructure"),
+            mpatches.Patch(color=initial_fixed_color, label="Initial fixed non-reallocatable roads"),
+            mpatches.Patch(color=newly_fixed_color, label="Newly fixed non-reallocatable roads"),
             mpatches.Patch(color=other_color, label="Other network"),
         ]
         ax.legend(handles=legend_elements, loc="lower right", fontsize=8)

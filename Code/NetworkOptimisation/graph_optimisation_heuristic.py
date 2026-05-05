@@ -531,6 +531,7 @@ def run_optimisation(
     run.evaluations.append(ev)
 
     last_iteration = 0
+    reached_max_iterations = False
 
     for i in tqdm(range(1, n_iterations + 1), desc=f"Iterations ({heuristic_name})", unit="iter", leave=False):
         last_iteration = i
@@ -585,6 +586,8 @@ def run_optimisation(
                 break
 
             run.evaluations.append(ev)
+    else:
+        reached_max_iterations = True
 
     if run.evaluations[-1]["iteration"] != last_iteration:
         ev, run.stop_state = _evaluate_current_state(
@@ -598,6 +601,10 @@ def run_optimisation(
             dry_run=dry_run,
         )
         run.evaluations.append(ev)
+
+    if reached_max_iterations:
+        run.evaluations[-1]["stop_reason"] = "max_iterations_reached"
+        print(f"[stop] Stopping {heuristic_name} at iteration {last_iteration}: max_iterations_reached")
 
     evaluations_df = pd.DataFrame(run.evaluations)
     return run.G_working, evaluations_df

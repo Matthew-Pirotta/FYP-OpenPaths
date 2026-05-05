@@ -9,6 +9,7 @@ MODEL_STYLES = (
     ("Model B", {"color": "tab:orange", "linestyle": "--", "marker": "s"}),
     ("Model C", {"color": "tab:green", "linestyle": ":", "marker": "^"}),
     ("Model D", {"color": "tab:red", "linestyle": "-.", "marker": "D"}),
+    ("Model E", {"color": "tab:purple", "linestyle": "-", "marker": "v"}),
 )
 MODEL_STYLE_BY_LABEL = dict(MODEL_STYLES)
 
