@@ -6,7 +6,40 @@ from matplotlib.ticker import ScalarFormatter
 
 import matplotlib.pyplot as plt
 
-#Region Loding Sim Ouput
+def load_aggregated_meandata(file, mode=None):
+    tree = ET.parse(file)
+    root = tree.getroot()
+
+    rows = []
+
+    for interval in root.findall("interval"):
+        edge = interval.find("edge")
+        if edge is None:
+            continue
+
+        row = {
+            "begin": float(interval.attrib["begin"]),
+            "end": float(interval.attrib["end"]),
+            "time": float(interval.attrib["begin"]),
+        }
+
+        row.update(edge.attrib)
+
+        if mode is not None:
+            row["mode"] = mode
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    for col in df.columns:
+        if col not in {"id", "mode"}:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df["time_hr"] = df["time"] / 3600
+    df["speed_kmh"] = df["speed"] * 3.6
+
+    return df
 
 # -----------------------------
 # 1. LOAD SUMMARY.XML
@@ -25,6 +58,8 @@ def load_summary(file):
             "meanSpeedRelative": float(step.attrib.get("meanSpeedRelative", "nan")),
             "halting": int(step.attrib.get("halting", 0)),
             "waiting": int(step.attrib.get("waiting", 0)),
+            "meanWaitingTime":  int(float(step.attrib.get("meanWaitingTime", 0))),
+            "meanTravelTime":  int(float(step.attrib.get("meanTravelTime", 0))),
             "inserted": int(step.attrib.get("inserted", 0)),
         })
 
@@ -80,33 +115,3 @@ def load_edgedata(file):
     df_edge = pd.DataFrame(rows).set_index("edge")
 
     return df_edge
-
-#end region
-
-#TODO these two are depricated
-def build_sumo_to_osm_map(df_edge):
-    mapping = {}
-
-    for edge_id in df_edge.index:
-        base_id = edge_id.split("#")[0]
-        mapping.setdefault(base_id, []).append(edge_id)
-
-    return mapping
-
-def attach_util_results_to_graph(G_unsimplified, df_edge):
-    mapping = build_sumo_to_osm_map(df_edge)
-
-    for u, v, k, data in G_unsimplified.edges(keys=True, data=True):
-
-        osmid = str(data.get("osmid"))
-
-        if osmid in mapping:
-
-            edge_ids = mapping[osmid]
-
-            # average if multiple SUMO segments
-            vals = df_edge.loc[edge_ids]
-
-            data["overlapDensity"] = vals["overlapDensity"].mean()
-            data["overlapTraveltime"] = vals["overlapTraveltime"].mean()
-            data["flow"] = vals["flow"].mean()

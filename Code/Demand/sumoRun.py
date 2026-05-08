@@ -114,7 +114,7 @@ def generate_trips(sim_dir, simulation_name, car_scale, bike_scale, verbose):
         "od2trips",
         "-n", f"car_{simulation_name}.taz.xml",
         "--tazrelation-files", "../od_matrix.xml",
-        "--spread.uniform" ,"true", #TODO i might want this to be false? and update writeup ovs
+        "--spread.uniform" ,"true",
         "--vtype", "car_junction_safe",
         "--prefix", "car_",
         "--scale", f"{car_scale}",
@@ -125,7 +125,7 @@ def generate_trips(sim_dir, simulation_name, car_scale, bike_scale, verbose):
     print("Running od2trips for bicycles")
     subprocess.run([
         "od2trips",
-        "-n", f"bike_{simulation_name}_filtered.taz.xml",
+        "-n", f"bike_{simulation_name}.taz.xml",
         "--tazrelation-files", "../od_matrix.xml",
         "--vtype", "bike",
         "--prefix", "bike_",

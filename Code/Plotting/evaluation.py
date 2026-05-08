@@ -5,11 +5,11 @@ import matplotlib.ticker as mticker
 
 
 MODEL_STYLES = (
-    ("Model A", {"color": "tab:blue", "linestyle": "-", "marker": "o"}),
-    ("Model B", {"color": "tab:orange", "linestyle": "--", "marker": "s"}),
-    ("Model C", {"color": "tab:green", "linestyle": ":", "marker": "^"}),
-    ("Model D", {"color": "tab:red", "linestyle": "-.", "marker": "D"}),
-    ("Model E", {"color": "tab:purple", "linestyle": "-", "marker": "v"}),
+    ("edge_betweenness", {"color": "tab:blue", "linestyle": "-", "marker": "o"}),
+    ("L2C", {"color": "tab:orange", "linestyle": "--", "marker": "s"}),
+    ("OD_betweenness", {"color": "tab:green", "linestyle": ":", "marker": "^"}),
+    ("Random", {"color": "tab:red", "linestyle": "-.", "marker": "D"}),
+    ("Malta_island", {"color": "tab:purple", "linestyle": "-", "marker": "v"}),
 )
 MODEL_STYLE_BY_LABEL = dict(MODEL_STYLES)
 
