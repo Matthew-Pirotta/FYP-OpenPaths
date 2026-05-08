@@ -1,5 +1,4 @@
 from .attributes import set_edge_attribute, summarise_road_type_stats
-from .coefficients import build_segment_coef
 from .reallocation import (
     _apply_segment_capacity_to_arcs,
     _create_bike_edge,
@@ -53,7 +52,6 @@ __all__ = [
     "_segment_is_oneway",
     "apply_reallocation_events_to_unsimplified",
     "build_arc_to_segment_map",
-    "build_segment_coef",
     "build_segment_inventory",
     "build_segment_reallocation_actions",
     "check_segment_reallocatable",

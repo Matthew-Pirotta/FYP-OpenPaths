@@ -61,13 +61,6 @@ def update_bike_costs(
 
 # region car cost
 def _compute_car_costs(length_m):
-
-    """
-    # after fietsstraat
-    v_fietsstraat = fietsstraat_speed_kmh * KMH_to_MS
-    car_cost_if_fietsstraat = length_m / v_fietsstraat
-    """
-
     return length_m
 
 

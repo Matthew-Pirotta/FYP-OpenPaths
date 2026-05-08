@@ -15,7 +15,6 @@ class InfraType(StrEnum):
     CAR = auto() # Car only road
     BIKE_LANE = auto() # painted
     CYCLE_TRACK = auto() #physically separated
-    FIETSSTRAAT = auto() #shared but bike priority
 
 SAFETY_COLORS = {
         SafetyClass.PROTECTED: "magenta",
@@ -32,9 +31,6 @@ HWY_COLORS = {
     "residential": "skyblue",  # Local street
     "service": "slategray",   # Minor access
 }
-
-FIETSSTRAAT_SPEED_KMH = 30.0
-DEFUALT_MAXIUM_SPEED_KMH = 60.0 #Maltese highway code for built up areas
 
 #stopping rules
 MIN_BIKE_GAIN = 0.005   # 0.5% of baseline bike total cost

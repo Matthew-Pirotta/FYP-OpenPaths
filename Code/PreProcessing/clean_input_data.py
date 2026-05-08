@@ -264,7 +264,7 @@ def ensure_bidirectional_bike(G_drive: MultiDiGraph):
             attrs["speed_kph_current"] = d.get("speed_kph_current")
             
             # Map cost logic
-            attrs["car_cost_current"] = d.get("car_cost_if_fietsstraat", 0)
+            attrs["car_cost_current"] = d.get("car_cost_current", 0)
 
             # Store to add after iteration to avoid 'dictionary changed size during iteration'
             new_edges.append((v, u, attrs))

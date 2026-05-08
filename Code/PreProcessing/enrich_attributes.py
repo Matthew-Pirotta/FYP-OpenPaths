@@ -5,7 +5,7 @@ import osmnx as ox
 import networkx as nx
 import numpy as np
 import geopandas as gpd
-from constants import SafetyClass, InfraType, FIETSSTRAAT_SPEED_KMH
+from constants import SafetyClass, InfraType
 
 from collections import Counter
 from shapely.geometry import Point
@@ -52,7 +52,6 @@ def bike_safety_classification(G: MultiDiGraph) -> MultiDiGraph:
             classification = SafetyClass.PAINTED
 
         elif infra_type == "mixed":
-            # Potentially a good fietsstraat candidate
             if highway in {"residential",}:
                 classification = SafetyClass.LOW_CAR_FLOW
 
@@ -172,8 +171,6 @@ def tag_reallocatable_edges(G:MultiDiGraph, verbose: bool = False) -> Counter:
         elif d.get("junction") == "roundabout":
             d["reallocatable"] = False
             counters["roundabouts"] += 1
-
-        # Can only reallocate where biking is allowed (i.e. not tunnels/highways)
 
         else:
             d["reallocatable"] = True

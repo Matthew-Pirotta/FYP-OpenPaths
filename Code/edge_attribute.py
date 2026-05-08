@@ -16,4 +16,3 @@ class EdgeAttr(StrEnum):
     
     # You can also manually map them if the string 
     # doesn't match the variable name exactly:
-    CAR_COST_FIETS = "car_cost_if_fietsstraat"
