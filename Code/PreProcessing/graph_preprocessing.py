@@ -140,7 +140,6 @@ def clean_simplified_graph(G:MultiDiGraph, place_name):
 
     clean_input_data.merge_semantically_equivalent_road_tags(G)
     clean_input_data.collapse_road_tag_lists(G)
-    G = clean_input_data.add_max_speed(G)
     clean_input_data.standardise_edge_atr(G)
 
     # simplify topology (may change geometries), then recompute accurate lengths

@@ -98,45 +98,6 @@ def remove_self_loops(G:MultiDiGraph):
 
     return G
 
-
-def add_max_speed(G):
-    """
-    Add the following attributes the edges,
-    The original speed kph
-    and the current kph if there are any reallocations, this is initialised to the original kph.
-    """
-
-    hwy_speeds:dict[str,int] = {
-        "trunk": 70,         # Fastest: Major arterial / high-capacity road
-        "primary": 60,       # Main city connectors
-        "secondary": 60,     # Main local routes
-        "tertiary": 50,      # Collector roads between neighborhoods
-        "residential": 30,   # Local neighborhood streets
-        "service": 30,       # Alleyways, parking lot access, etc.
-    }
-
-    G = ox.add_edge_speeds(G, hwy_speeds=hwy_speeds, fallback=constants.DEFUALT_MAXIUM_SPEED_KMH)
-
-    for u, v, _, d in G.edges(keys=True, data=True):
-        #Renames 'speed_kph' to 'speed_kph_original'
-        d["speed_kph_original"] = d.get("speed_kph")
-        d["speed_kph_current"] = d["speed_kph_original"]
-
-        # remove old 'speed_kph' tag
-        if "lanes" in d:
-            del d["speed_kph"]
-
-    
-    from collections import Counter
-
-    speeds = [d.get("speed_kph_current") for _, _, _, d in G.edges(keys=True, data=True) if d.get("speed_kph_current") is not None]
-    speed_counts = Counter(speeds)
-
-    for spd, cnt in sorted(speed_counts.items()):
-        print(f"{spd:>5} kph : {cnt}")
-
-    return G
-
 #TODO need to do a better job, example car_allowed and bike_allowed
 def standardise_edge_atr(G):
 

@@ -4,7 +4,7 @@ from Plotting.attributes import plot_elevation, plot_grades
 from Plotting.evolution import plot_snapshots, plot_network_evolution, plot_proposed_cycling_network
 from Plotting.evaluation import plot_metrics, plot_od_investigation, plot_od_matrix_error
 from Plotting.spatial import plot_gdf_and_overlay, plot_coverage, plot_OD_points, plot_OD_lines, plot_population_heatmap_with_regions_and_roads, plot_locality_population
-from Plotting.sumo_eval import plot_simple_sumo_run, plot_compare_summary, plot_compare_mode
+from Plotting.sumo_eval import  plot_compare_summary, plot_compare_mode
 
 __all__ = [
     "draw_graph",
@@ -24,7 +24,6 @@ __all__ = [
     "plot_OD_lines",
     "plot_od_investigation",
     "plot_od_matrix_error",
-    "plot_simple_sumo_run",
     "plot_compare_summary",
     "plot_compare_mode",
     "plot_population_heatmap_with_regions_and_roads",

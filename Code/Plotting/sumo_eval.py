@@ -38,7 +38,7 @@ def plot_compare_summary(
     min_value=None,
     xlabel="Time (h)",
 ):
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(8, 5))
     plotted = False
 
     for idx, (name, data) in enumerate(results.items()):
@@ -106,7 +106,7 @@ def plot_compare_mode(
     min_value=None,
     xlabel="Time (h)",
 ):
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(8, 5))
     plotted = False
 
     for idx, (name, data) in enumerate(results.items()):

@@ -248,7 +248,7 @@ def plot_proposed_cycling_network(
     proposed_linewidth=1.8,
     initial_fixed_linewidth=0.8,
     newly_fixed_linewidth=1.2,
-    other_linewidth=0.35,
+    other_linewidth=0.8,
     initial_alpha=0.95,
     proposed_alpha=1.0,
     initial_fixed_alpha=0.8,
