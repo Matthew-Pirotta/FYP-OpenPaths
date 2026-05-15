@@ -1,7 +1,7 @@
 import random
 from networkx import MultiDiGraph, display
 from sympy import centroid
-import graph_util as graph_util
+import GraphUtil as graph_util
 import osmnx as ox
 import networkx as nx
 import numpy as np

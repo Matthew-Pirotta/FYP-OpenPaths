@@ -1,5 +1,5 @@
 from networkx import MultiDiGraph
-import graph_util as graph_util
+import GraphUtil as graph_util
 import copy
 import random
 import pandas as pd

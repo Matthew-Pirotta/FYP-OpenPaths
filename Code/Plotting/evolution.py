@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.colors import to_rgba
-import graph_util
+import GraphUtil as graph_util
 
 from Plotting import renderer
 from Plotting.renderer import PlotSettings

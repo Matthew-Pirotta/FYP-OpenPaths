@@ -6,7 +6,7 @@ import numpy as np
 
 from . import clean_input_data, enrich_attributes, graph_structure
 from NetworkOptimisation import impedance_calculator
-import graph_util
+import GraphUtil as graph_util
 import constants
 
 

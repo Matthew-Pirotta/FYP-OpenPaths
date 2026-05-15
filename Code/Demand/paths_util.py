@@ -4,7 +4,7 @@ from collections import Counter, deque
 from collections.abc import Mapping
 from constants import Arc, OD, Seg
 from networkx import MultiDiGraph
-import graph_util
+import GraphUtil as graph_util
 import nx_parallel
 
 def _best_edge_key(G, u, v, weight_attr):

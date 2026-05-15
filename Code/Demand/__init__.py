@@ -64,7 +64,6 @@ __all__ = [
     "compute_candidate_paths",
     "compute_edge_importance",
     "calculate_path_metrics",
-    "build_od_allowed_arcs",
     # SUMO runner
     "run_simulation",
 ]
