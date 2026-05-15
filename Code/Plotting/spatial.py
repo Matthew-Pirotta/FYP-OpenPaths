@@ -31,7 +31,7 @@ def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
     fig.tight_layout()
     plt.show()
 
-    return gdf_colored
+    return fig, ax, gdf_colored
 
 
 #region Metrics
@@ -147,6 +147,8 @@ def plot_OD_points(
     fig.tight_layout()
     plt.show()
 
+    return fig, ax
+
 def build_OD_lines_gdf(G, OD, *, use_weights=True):
     """
     Build a GeoDataFrame of straight OD lines.
@@ -227,7 +229,7 @@ def plot_OD_lines(
     fig.tight_layout()
     plt.show()
 
-    return gdf_od
+    return fig, ax, gdf_od
 
 
 import matplotlib.pyplot as plt

@@ -370,7 +370,7 @@ def plot_proposed_cycling_network(
         )
 
     if title:
-        ax.set_title(title)
+        ax.set_title(title, fontsize=24)
 
     if legend:
         legend_elements = [
@@ -380,7 +380,7 @@ def plot_proposed_cycling_network(
             mpatches.Patch(color=newly_fixed_color, label="Newly fixed non-reallocatable roads"),
             mpatches.Patch(color=other_color, label="Other network"),
         ]
-        ax.legend(handles=legend_elements, loc="lower right", fontsize=8)
+        ax.legend(handles=legend_elements, loc="upper right", fontsize=20)
 
     ax.axis("off")
     fig.tight_layout()

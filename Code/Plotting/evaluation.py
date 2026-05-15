@@ -32,9 +32,9 @@ def plot_metrics(df):
 
     # Figure 1: Bike-car trade-off scatter.
     fig1, ax1 = plt.subplots(figsize=(7.5, 5.5))
-    ax1.set_title("Bike gain vs car harm")
-    ax1.set_xlabel("Car harm vs baseline (%)")
-    ax1.set_ylabel("Bike gain vs baseline (%)")
+    ax1.set_title(r"Bike gain $G_b^t$ vs car harm $H_c^t$")
+    ax1.set_xlabel(r"Car harm, $H_c^t$ (%)")
+    ax1.set_ylabel(r"Bike gain, $G_b^t$ (%)")
     ax1.axhline(0, color="0.75", linewidth=1)
     ax1.axvline(0, color="0.75", linewidth=1)
     ax1.xaxis.set_major_formatter(mticker.PercentFormatter())
@@ -51,7 +51,7 @@ def plot_metrics(df):
                 markersize=6,
                 **style,
             )
-        ax1.legend(title="Model", fontsize=9)
+        ax1.legend(title="Model", fontsize=9, loc="upper left")
     else:
         _show_missing_metric(ax1)
     fig1.tight_layout()
@@ -62,15 +62,15 @@ def plot_metrics(df):
         ax2,
         groups,
         directness_col,
-        title="Demand-weighted directness",
-        ylabel="Directness (drive/bike)",
+        title=r"Demand-weighted directness $D$ over optimisation",
+        ylabel=r"Demand-weighted directness, $D$",
     )
     fig2.tight_layout()
 
     # Figure 3: Protected coverage over iterations.
     fig3, ax3 = plt.subplots(figsize=(7.5, 4.8))
     coverage_scale = 1.0
-    coverage_ylabel = "Coverage area (km^2)"
+    coverage_ylabel = r"Spatial coverage, $A_{\mathrm{cov}}^t$ (km$^2$)"
     if coverage_col and coverage_col.endswith("_m2"):
         coverage_scale = 1.0 / 1_000_000.0
 
@@ -78,7 +78,7 @@ def plot_metrics(df):
         ax3,
         groups,
         coverage_col,
-        title="Coverage",
+        title=r"Spatial coverage $A_{\mathrm{cov}}^t$ over optimisation",
         ylabel=coverage_ylabel,
         scale=coverage_scale,
     )
@@ -90,8 +90,8 @@ def plot_metrics(df):
         ax4,
         groups,
         protected_lcc_col,
-        title="Protected LCC length",
-        ylabel="Protected LCC length (km)",
+        title=r"Protected LCC length $L_{\mathrm{LCC}}^t$ over optimisation",
+        ylabel=r"Protected LCC length, $L_{\mathrm{LCC}}^t$ (km)",
         scale=1.0 / 1000.0,
     )
     fig4.tight_layout()
@@ -146,7 +146,7 @@ def _plot_metric_over_iterations(
     scale=1.0,
 ):
     ax.set_title(title)
-    ax.set_xlabel("Iteration")
+    ax.set_xlabel(r"Iteration, $t$")
     ax.set_ylabel(ylabel)
     ax.grid(alpha=0.3)
 
@@ -165,7 +165,7 @@ def _plot_metric_over_iterations(
             **style,
         )
 
-    ax.legend(title="Model", fontsize=9)
+    ax.legend(title="Model", fontsize=9, loc="upper left")
 
 
 def _show_missing_metric(ax):
