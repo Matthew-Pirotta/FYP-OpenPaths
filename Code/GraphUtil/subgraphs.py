@@ -1,9 +1,11 @@
 from typing import Literal
-
 from networkx import MultiDiGraph
-
 from constants import SafetyClass
 
+safe_bike_classes = {
+        SafetyClass.PAINTED,
+        SafetyClass.PROTECTED,
+    }
 
 def make_drive_subgraph(G: MultiDiGraph) -> MultiDiGraph:
     return _filter_edges(G, lambda d: d.get("car_allowed", False))
@@ -20,7 +22,16 @@ def make_reallocatable_subgraph(G: MultiDiGraph) -> MultiDiGraph:
 def make_protected_subgraph(G: MultiDiGraph) -> MultiDiGraph:
     return _filter_edges(
         G,
-        lambda d: d.get("safety") in [SafetyClass.PAINTED, SafetyClass.PROTECTED],
+        lambda d: d.get("safety") in safe_bike_classes,
+    )
+
+
+def make_plotting_subgraph(G: MultiDiGraph) -> MultiDiGraph:
+    """Subgraph for plotting drive roads plus painted/protected bike infrastructure."""
+   
+    return _filter_edges(
+        G,
+        lambda d: d.get("car_allowed", False) or d.get("safety") in safe_bike_classes,
     )
 
 

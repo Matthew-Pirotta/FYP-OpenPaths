@@ -128,7 +128,6 @@ def audit_elevation_and_grade(G, label=""):
         print("sample bad edges:", bad_edges[:10])
 
 
-#TODO finalise the structure
 def clean_simplified_graph(G:MultiDiGraph, place_name):
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
 

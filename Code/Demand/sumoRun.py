@@ -46,65 +46,6 @@ def build_taz(sim_dir, simulation_name, verbose):
         "-v"
     ],cwd=sim_dir, capture_output=True, check=True, text=True)
 
-    bike_taz = filter_bike_taz(sim_dir, simulation_name)
-
-#TODO i dont like this
-#this is so that bikes dont spawn at the edge of bikeable networks and get stuck
-def filter_bike_taz(sim_dir, simulation_name):
-    net = sumolib.net.readNet(os.path.join(sim_dir, f"{simulation_name}.net.xml"))
-
-    # identify valid edges
-    valid_edges = set()
-
-    for edge in net.getEdges():
-        if not edge.allows("bicycle"):
-            continue
-
-        # --- lane-level safety ---
-        lanes = edge.getLanes()
-        if not all(lane.allows("bicycle") for lane in lanes):
-            continue
-
-        # --- adjacency ---
-        outgoing = edge.getOutgoing()
-        incoming = edge.getIncoming()
-
-        # ❗ fix empty adjacency bug
-        if not outgoing or not incoming:
-            continue
-
-        # --- ALL neighbors must allow bikes ---
-        if not all(out_edge.allows("bicycle") for out_edge in outgoing):
-            continue
-
-        if not all(in_edge.allows("bicycle") for in_edge in incoming):
-            continue
-
-        valid_edges.add(edge.getID())
-
-    # load TAZ file
-    taz_file = os.path.join(sim_dir, f"bike_{simulation_name}.taz.xml")
-    tree = ET.parse(taz_file)
-    root = tree.getroot()
-
-    # filter edges in each TAZ
-    for taz in root.findall("taz"):
-        edges = taz.get("edges").split()
-        filtered = [e for e in edges if e in valid_edges]
-
-        if filtered:
-            taz.set("edges", " ".join(filtered))
-        else:
-            # remove empty TAZs
-            root.remove(taz)
-
-    # save new filtered file
-    out_file = os.path.join(sim_dir, f"bike_{simulation_name}_filtered.taz.xml")
-    tree.write(out_file)
-
-    return out_file
-
-
 def generate_trips(sim_dir, simulation_name, car_scale, bike_scale, verbose):
     #NOTE edges arent identical between networks?, so seperate OD start end points need to be generated
     #Mainly due to the fact that some edges might not be accesible to bike/cars after reallocation differences

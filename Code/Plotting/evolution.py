@@ -241,20 +241,20 @@ def plot_proposed_cycling_network(
     initial_safety_classes=None,
     initial_color="#7BC87A",        # light green — existing cycling
     proposed_color="#1A6B2F",       # dark green — new additions
-    initial_fixed_color="#F3BAA2",  # light orange-red — fixed existing
+    initial_fixed_color="#DBB3A1",  # light orange-red — fixed existing
     newly_fixed_color="#C0242A",    # strong red — newly fixed
     other_color="#CDC8C2",         
-    initial_linewidth=1.4,
-    proposed_linewidth=1.8,
-    initial_fixed_linewidth=0.8,
-    newly_fixed_linewidth=1.2,
-    other_linewidth=0.8,
+    initial_linewidth=1.5,
+    proposed_linewidth=2,
+    initial_fixed_linewidth=0.5,
+    newly_fixed_linewidth=1,
+    other_linewidth=0.5,
     initial_alpha=0.95,
     proposed_alpha=1.0,
     initial_fixed_alpha=0.8,
     newly_fixed_alpha=1.0,
     other_alpha=0.7,
-    title="Initial and Proposed Cycling Network",
+    title="",
     legend=True,
     show=True,
     **kwargs: PlotSettings,
@@ -384,8 +384,11 @@ def plot_proposed_cycling_network(
 
     ax.axis("off")
     fig.tight_layout()
+
     if show:
         plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax
 

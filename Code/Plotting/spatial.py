@@ -3,13 +3,14 @@ import geopandas as gpd
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 from shapely.geometry import LineString
+from shapely.ops import unary_union
 import numpy as np
 
 from Plotting.utils import assign_adjacent_colors
 from Plotting.renderer import draw_graph
 
 #region Optimisation
-def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
+def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False, show=True):
     """Plot the location and the region outlines, and the transport network if passed"""
     fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -29,7 +30,9 @@ def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False):
 
     ax.axis("off")
     fig.tight_layout()
-    plt.show()
+
+    if show:
+        plt.show()
 
     return fig, ax, gdf_colored
 
@@ -71,8 +74,26 @@ def plot_OD_points(
     destination_point=None,
     figsize=(14, 14),
     title=None,
+    silhouette=None,
+    silhouette_color="0.95",
+    silhouette_edgecolor="none",
+    silhouette_alpha=1.0,
+    legend_loc="upper right",
+    legend_fontsize=None,
+    legend_markerscale=1.0,
+    show = True,
 ):
     fig, ax = plt.subplots(figsize=figsize)
+
+    if silhouette is not None:
+        plot_silhouette(
+            silhouette,
+            ax=ax,
+            crs=G.graph.get("crs"),
+            color=silhouette_color,
+            edgecolor=silhouette_edgecolor,
+            alpha=silhouette_alpha,
+        )
 
     fig, ax = draw_graph(G, ax=ax, node_size=0, edge_color="gray", edge_linewidth=0.5)
 
@@ -85,12 +106,7 @@ def plot_OD_points(
         )
 
     if gdf_destinations is not None:
-        sizes = (
-            gdf_destinations[destination_size_col] * 4
-            if destination_size_col and destination_size_col in gdf_destinations.columns
-            else 6
-        )
-        gdf_destinations.plot(ax=ax, color="orange", markersize=sizes, alpha=0.7)
+        gdf_destinations.plot(ax=ax, color="orange", markersize=6, alpha=0.7)
         legend_handles.append(
             mlines.Line2D(
                 [],
@@ -138,14 +154,22 @@ def plot_OD_points(
         )
 
     if legend_handles:
-        ax.legend(handles=legend_handles, loc="upper right")
+        ax.legend(
+            handles=legend_handles,
+            loc=legend_loc,
+            fontsize=legend_fontsize,
+            markerscale=legend_markerscale,
+        )
 
     if title:
         ax.set_title(title)
 
     ax.axis("off")
     fig.tight_layout()
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax
 
@@ -191,20 +215,38 @@ def plot_OD_lines(
     linewidth=1.0,
     figsize=(14, 14),
     title=None,
+    silhouette=None,
+    silhouette_color="0.95",
+    silhouette_edgecolor="none",
+    silhouette_alpha=1.0,
+    show_graph=True,
+    graph_edge_color="lightgray",
+    graph_edge_linewidth=0.5,
+    show = True,
 ):
     """
     Plot straight-line OD pairs over the network.
     """
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Base graph
-    fig, ax = draw_graph(
-        G,
-        ax=ax,
-        node_size=0,
-        edge_color="lightgray",
-        edge_linewidth=0.5,
-    )
+    if silhouette is not None:
+        plot_silhouette(
+            silhouette,
+            ax=ax,
+            crs=G.graph.get("crs"),
+            color=silhouette_color,
+            edgecolor=silhouette_edgecolor,
+            alpha=silhouette_alpha,
+        )
+
+    if show_graph:
+        fig, ax = draw_graph(
+            G,
+            ax=ax,
+            node_size=0,
+            edge_color=graph_edge_color,
+            edge_linewidth=graph_edge_linewidth,
+        )
 
     # Build OD lines
     gdf_od = build_OD_lines_gdf(G, OD)
@@ -227,9 +269,49 @@ def plot_OD_lines(
 
     ax.axis("off")
     fig.tight_layout()
-    plt.show()
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax, gdf_od
+
+
+def plot_silhouette(
+    silhouette,
+    *,
+    ax,
+    crs=None,
+    color="0.92",
+    edgecolor="none",
+    alpha=1.0,
+):
+    """Plot a dissolved polygon silhouette from a geometry, GeoSeries, or GeoDataFrame."""
+    if isinstance(silhouette, gpd.GeoDataFrame):
+        source_crs = silhouette.crs
+        geoms = silhouette.geometry.dropna().tolist()
+    elif isinstance(silhouette, gpd.GeoSeries):
+        source_crs = silhouette.crs
+        geoms = silhouette.dropna().tolist()
+    else:
+        source_crs = crs
+        geoms = [silhouette]
+
+    geom = unary_union(geoms)
+    gdf = gpd.GeoDataFrame(geometry=[geom], crs=source_crs)
+
+    if crs is not None and gdf.crs is not None and gdf.crs != crs:
+        gdf = gdf.to_crs(crs)
+
+    gdf.plot(
+        ax=ax,
+        color=color,
+        edgecolor=edgecolor,
+        alpha=alpha,
+        zorder=0,
+    )
+    return ax
 
 
 import matplotlib.pyplot as plt
@@ -257,7 +339,12 @@ def plot_population_heatmap_with_regions_and_roads(
     road_edge_color="black",
     road_edge_linewidth=0.4,
     road_alpha=0.5,
-    cbar_label="Allocated population weight"
+    cbar_label="Allocated population weight",
+    silhouette=None,
+    silhouette_color="0.95",
+    silhouette_edgecolor="none",
+    silhouette_alpha=1.0,
+    show_plot = True
 ):
     res = gdf_residential.copy()
     loc = gdf_localities.copy()
@@ -275,14 +362,15 @@ def plot_population_heatmap_with_regions_and_roads(
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    # 1) faint locality fill underneath
+    # 1) faint locality silhouette underneath
     if show_region_fill:
-        loc_colored.plot(
+        plot_silhouette(
+            silhouette if silhouette is not None else loc,
             ax=ax,
-            color=loc_colored["color"],
-            edgecolor="none",
-            alpha=0.15,
-            zorder=1,
+            crs=res.crs,
+            color=silhouette_color,
+            edgecolor=silhouette_edgecolor,
+            alpha=silhouette_alpha,
         )
 
     # 2) residential heatmap
@@ -316,16 +404,26 @@ def plot_population_heatmap_with_regions_and_roads(
 
     # 4) road edges
     if show_roads and G is not None:
+        before = set(ax.collections)
+
         fig, ax = draw_graph(
             G,
             ax=ax,
             node_size=0,
             edge_color=road_edge_color,
             edge_linewidth=road_edge_linewidth,
+            # if draw_graph is osmnx.plot_graph or supports this:
+            edge_alpha=road_alpha,
         )
 
-        # if draw_graph does not expose alpha, this is still fine;
-        # otherwise pass alpha=road_alpha there if supported
+        # fallback: force styling on newly added road collections
+        new_collections = [c for c in ax.collections if c not in before]
+
+        for c in new_collections:
+            c.set_alpha(road_alpha)
+            c.set_linewidth(road_edge_linewidth)
+            c.set_color(road_edge_color)
+            c.set_rasterized(True)   # important for PDF appearance
 
     # 5) region names
     if show_region_names and "name" in loc_colored.columns:
@@ -343,10 +441,13 @@ def plot_population_heatmap_with_regions_and_roads(
                 zorder=5,
             )
 
-    ax.set_title(title or f"Population heatmap: {plot_col}")
+    ax.set_title(title)
     ax.axis("off")
     plt.tight_layout()
-    plt.show()
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax
 
