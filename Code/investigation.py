@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
 import osmnx as ox
+import time
+import networkx as nx
+from NetworkOptimisation import impedance_calculator
+from networkx import DiGraph
+from scipy.stats import spearmanr
 
 def analyze_parallel_edges(G):
     # Count number of parallel edges for each directed (u, v) pair
@@ -90,3 +95,43 @@ def plot_parallel_edges(G):
     cbar.set_label("Parallel edges per directed pair", rotation=270, labelpad=20)
     plt.title("Parallel Edges (Same Direction)")
     plt.show()
+
+def compare_two_k(G: DiGraph, k1, k2, seed=42):
+    n_nodes = len(G.nodes)
+    edges = len(G.edges)
+
+    impedance_calculator.update_bike_costs(G)
+
+    def compute_bc(k):
+        t0 = time.perf_counter()
+        bc = nx.edge_betweenness_centrality(G, weight="bike_cost_penalty", normalized=True, k=k, seed=seed, backend="parallel")
+        elapsed = time.perf_counter() - t0
+        return bc, elapsed
+
+    print(f"Computing betweenness for k={k1}...")
+    bc1, t1 = compute_bc(k1)
+    print(f"k={k1} | time={t1:.2f}s")
+
+    print(f"Computing betweenness for k={k2}...")
+    bc2, t2 = compute_bc(k2)
+    print(f"k={k2} | time={t2:.2f}s")
+
+    vals1 = np.array([bc1[e] for e in G.edges])
+    vals2 = np.array([bc2[e] for e in G.edges])
+
+    rel_err = np.mean(np.abs(vals2 - vals1) / (vals1 + 1e-9))
+    corr, pvalue = spearmanr(vals1, vals2)
+
+    print(f"\n--- Comparison: k={k1} (reference) vs k={k2} ---")
+    print(f"nodes={n_nodes}, edges={edges}")
+    print(f"Relative Error : {rel_err:.4f}")
+    print(f"Spearman r     : {corr:.4f}  (p={pvalue:.2e})")
+    print(f"Time k={k1}     : {t1:.2f}s")
+    print(f"Time k={k2}     : {t2:.2f}s")
+
+    return {
+    "k1": k1, "k2": k2,
+    "rel_err": rel_err,
+    "spearman_r": corr,
+    "spearman_p": pvalue,
+    "time_k1": t1, "time_k2": t2}

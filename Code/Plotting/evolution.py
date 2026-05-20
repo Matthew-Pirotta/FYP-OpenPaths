@@ -382,8 +382,9 @@ def plot_proposed_cycling_network(
         ]
         ax.legend(handles=legend_elements, loc="upper right", fontsize=20)
 
-    ax.axis("off")
-    fig.tight_layout()
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
 
     if show:
         plt.show()

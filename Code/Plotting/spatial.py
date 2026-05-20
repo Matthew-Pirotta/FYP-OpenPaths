@@ -10,7 +10,7 @@ from Plotting.utils import assign_adjacent_colors
 from Plotting.renderer import draw_graph
 
 #region Optimisation
-def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False, show=True):
+def plot_gdf_and_overlay(gdf, G=None, title=None, fontsize=6, annotate=False, show=True):
     """Plot the location and the region outlines, and the transport network if passed"""
     fig, ax = plt.subplots(figsize=(10, 10))
 
@@ -23,16 +23,19 @@ def plot_gdf_and_overlay(gdf, G=None, title=None, annotate=False, show=True):
     if annotate and "name" in gdf_colored.columns:
         for _, row in gdf_colored.iterrows():
             c = row.geometry.centroid
-            ax.text(c.x, c.y, row["name"], fontsize=6, ha="center")
+            ax.text(c.x, c.y, row["name"], fontsize=fontsize, ha="center")
 
     if title:
         ax.set_title(title)
 
-    ax.axis("off")
-    fig.tight_layout()
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
 
     if show:
         plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax, gdf_colored
 
@@ -58,8 +61,11 @@ def plot_coverage(G_master, union_geom, title="Coverage Area"):
     )
 
     ax.set_title(title)
-    ax.axis("off")
-    fig.tight_layout()
+
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
+
     plt.show()
 
 
@@ -164,8 +170,10 @@ def plot_OD_points(
     if title:
         ax.set_title(title)
 
-    ax.axis("off")
-    fig.tight_layout()
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
+
     if show:
         plt.show()
     else:
@@ -267,8 +275,9 @@ def plot_OD_lines(
     if title:
         ax.set_title(title)
 
-    ax.axis("off")
-    fig.tight_layout()
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
 
     if show:
         plt.show()
@@ -441,8 +450,9 @@ def plot_population_heatmap_with_regions_and_roads(
                 zorder=5,
             )
 
-    ax.set_title(title)
-    ax.axis("off")
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
     plt.tight_layout()
     if show_plot:
         plt.show()
@@ -475,6 +485,7 @@ def plot_locality_population(
     show_roads=True,
     road_edge_color="black",
     road_edge_linewidth=0.4,
+    show = True,
 ):
     loc = gdf_localities.copy()
 
@@ -533,9 +544,14 @@ def plot_locality_population(
                 zorder=5,
             )
 
-    ax.set_title(title)
-    ax.axis("off")
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
     plt.tight_layout()
-    plt.show()
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     return fig, ax, loc

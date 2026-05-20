@@ -29,7 +29,7 @@ SIMPLIFY_SPEC = {
     #categorical, select through priority
     "highway": lambda values: tag_utils.select_primary_label(values, tag_utils.HIGHWAY_PRIORITY),
     "cycleway": lambda values: tag_utils.select_primary_label(values, tag_utils.CYCLEWAY_PRIORITY),
-    "safety": lambda values: min(values, key=lambda x: enrich_attributes.safety_to_risk_factor_map.get(x, float("inf"))), #TODO check if this is functional
+    "safety": lambda values: min(values, key=lambda x: enrich_attributes.safety_to_risk_factor_map.get(x, float("inf"))),
 
     #misc
     "region": lambda vs: list(set(vs)),

@@ -51,8 +51,8 @@ def plot_categorical_attr(
         handles=legend_elements, 
         title=legend_title or attr.replace("_", " ").title(),
         loc="upper right",
-        fontsize=20,
-        title_fontsize=20
+        fontsize=17,
+        title_fontsize=17
     )
 
     if title:

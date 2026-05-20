@@ -98,7 +98,6 @@ def remove_self_loops(G:MultiDiGraph):
 
     return G
 
-#TODO need to do a better job, example car_allowed and bike_allowed
 def standardise_edge_atr(G):
 
     #NOTE unfortunatly some streets are not tagged with a lane count, these are assumed to be single lanes
