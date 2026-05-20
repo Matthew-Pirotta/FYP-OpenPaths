@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+    <edgeData
+        id="network_car"
+        file="Output/network_car_meandata.xml"
+        vTypes="car_junction_safe"
+        period="60"
+        aggregate="true"
+        writeAttributes="sampledSeconds speed traveltime waitingTime departed arrived entered left"/>
+
+    <edgeData
+        id="network_bike"
+        file="Output/network_bike_meandata.xml"
+        vTypes="bike"
+        period="60"
+        aggregate="true"
+        writeAttributes="sampledSeconds speed traveltime waitingTime departed arrived entered left"/>
+</additional>
