@@ -1,7 +1,6 @@
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import Point
-import random
 import pandas as pd
 import osmnx as ox
 from collections import Counter
@@ -224,11 +223,6 @@ def gen_od_trips_timeline(
         })
 
     return intervals
-
-
-
-
-
 
 def _iter_od_triples(od_data):
     """

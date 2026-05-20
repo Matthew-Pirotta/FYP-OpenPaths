@@ -84,19 +84,8 @@ def collapse_road_tag_lists(G):
         data["cycleway"] = select_primary_label(
             data.get("cycleway"), tag_utils.CYCLEWAY_PRIORITY
         )
-
-def collapse_lanes_list(G):
-    pass
 #endregion
 
-
-def remove_self_loops(G:MultiDiGraph):
-    """Self loops need to be removed as they have a lenght of 0, and are not meaningful NOTE (roundabouts are currently represted by multiple nodes)"""
-    loops = list(nx.selfloop_edges(G))
-    print(f"removed {len(loops)} self loops")
-    G.remove_edges_from(loops)
-
-    return G
 
 def standardise_edge_atr(G):
 

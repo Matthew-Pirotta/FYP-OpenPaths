@@ -163,7 +163,6 @@ def clean_simplified_graph(G:MultiDiGraph, place_name):
 
 
 def clean_unsimplified_graph(G:MultiDiGraph):
-    clean_input_data.remove_self_loops(G)
     G = clean_input_data.set_roundabouts_oneway(G)
     clean_input_data.ensure_edge_geometries(G)
 

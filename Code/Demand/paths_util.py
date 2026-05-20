@@ -1,11 +1,10 @@
 import networkx as nx
-from typing import Literal, Optional
-from collections import Counter, deque
+from typing import Literal
+from collections import Counter
 from collections.abc import Mapping
 from constants import Arc, OD, Seg
 from networkx import MultiDiGraph
 import GraphUtil as graph_util
-import nx_parallel
 
 def _best_edge_key(G, u, v, weight_attr):
     edges = G[u][v]
@@ -120,105 +119,7 @@ def compute_edge_importance(G, paths, weight_attr = "length"):
 
     return edge_importance
 
-#NOTE Use G_seg (undirected segment graph) for corridor expansion because it approximates “nearby streets” without directionality headaches
-def _path_to_arcs(path: list[int]) -> list[Arc]:
-    """
-    Converts an ordered list of nodes into a list of directed arcs.
-
-    Example:
-        >>> _path_to_arcs([1, 2, 3])
-        [(1, 2, 0), (2, 3, 0)]
-    """
-    return [(u, v, 0) for u, v in zip(path[:-1], path[1:])]
-
-#region build_od_allowed_arcs
-def _k_hop_arc_corridor(G_seg: MultiDiGraph, seed_segs: set[Seg], hops: int) -> set[Arc]:
-    """Expand a set of undirected segments by k hops in the undirected segment graph."""
-    if hops <= 0:
-        return set(seed_segs)
-
-    visited: set[Seg] = set(seed_segs)
-    q = deque([(seg, 0) for seg in seed_segs])
-
-    # In a segment graph, each edge is a segment between two nodes.
-    # Two segments are "neighbors" if they share a node (endpoint).
-    while q:
-        seg, depth = q.popleft()
-        if depth >= hops:
-            continue
-
-        a, b, _= seg
-        for endpoint in (a, b):
-            for x, y, k in G_seg.edges(endpoint, keys=True):
-                seg2 = x,y,k
-                if seg2 not in visited:
-                    visited.add(seg2)
-                    q.append((seg2, depth + 1))
-
-    return visited
-
-def _collect_path_seed_arcs( G: MultiDiGraph, o: int, d: int, weight_attr: str) -> set[Arc]:
-    """Shortest path -> arcs -> mapped seed segments."""
-    try:
-        path_nodes = nx.shortest_path(G, o, d, weight=weight_attr)
-    except nx.NetworkXNoPath:
-        return set()
-
-    path_arcs = _path_to_arcs(path_nodes)
-    seed_arcs = set(path_arcs)
-    return seed_arcs
-
-def _collect_seed_segments_for_od(
-    G: MultiDiGraph,
-    o: int,
-    d: int,
-    arc_to_seg: dict[Arc, Seg],
-    *,
-    include_car_path: bool,
-    include_bike_path: bool,
-    car_weight: str,
-    bike_weight: str,
-) -> set[Seg]:
-    """Collect seed segments from enabled baseline paths."""
-    seed_segs: set[Seg] = set()
-
-    if include_car_path:
-        seed_segs.update(
-            _collect_path_seed_arcs(G, o, d, car_weight)
-        )
-
-    if include_bike_path:
-        seed_segs.update(
-            _collect_path_seed_arcs(G, o, d, bike_weight)
-        )
-
-    return seed_segs
-
-def _segments_to_arcs_set(
-    segs: set[Seg],
-    seg_to_arcs: dict[Seg, list[Arc]],
-) -> set[Arc]:
-    
-    arcs: set[Arc] = set()
-    for seg in segs:
-        arcs.update(seg_to_arcs.get(seg, []))
-    return arcs
-
-def _expand_corridor(
-    G_seg: MultiDiGraph,
-    seed_segs: set[Seg],
-    arc_to_seg: dict[Arc, Seg],
-    seg_to_arcs: dict[Seg, list[Arc]],
-    *,
-    corridor_hops: int,
-) -> set[Arc]:
-    
-    segs_corr = _k_hop_arc_corridor(G_seg, seed_segs, corridor_hops)
-    arcs_corr = _segments_to_arcs_set(segs_corr, seg_to_arcs)
-    return arcs_corr
-
 ODKey = tuple[int, int]
-
 
 def make_od_key(od) -> ODKey:
     if isinstance(od, tuple) and len(od) >= 2:

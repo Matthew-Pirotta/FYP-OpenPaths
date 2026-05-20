@@ -5,14 +5,8 @@ import matplotlib.pyplot as plt
 from Demand import ODGeneration, paths_util, ODAggregation, ODConstants, SpatialPrep
 import constants
 
-def run_beta_sweep(
-    G_drive,
-    residential_sampling,
-    gdf_destinations,
-    rng,
-    beta_range,
-    list_total_trips_per_hour,
-):
+def run_beta_sweep(G_drive, residential_sampling, gdf_destinations,
+    rng, beta_range, list_total_trips_per_hour,):
     results = []
     best_od_norm_matrix = None
     best_od_locality_matrix = None
