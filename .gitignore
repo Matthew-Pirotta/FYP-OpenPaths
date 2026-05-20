@@ -2,6 +2,9 @@
 *.svg
 
 Simulations/*/
+!Simulations/templates/
+!Simulations/templates/**
+
 Output/
 Data/
 Images
