@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 from Plotting.evaluation import MODEL_STYLE_BY_LABEL, MODEL_STYLES
+from pathlib import Path
 
 
 hour_formatter = FuncFormatter(lambda x, pos: f"{x / 3600:.1f}")
@@ -37,7 +38,11 @@ def plot_compare_summary(
     *,
     min_value=None,
     xlabel="Time (h)",
+    output_dir="Output/Plots/SumoEvaluation",
 ):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     fig, ax = plt.subplots(figsize=(8, 5))
     plotted = False
 
@@ -90,6 +95,12 @@ def plot_compare_summary(
         ax.legend(title="Model", fontsize=9)
 
     fig.tight_layout()
+    fig.savefig(
+        output_dir / "sumo_compare_summary.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
+
     plt.show()
 
     return fig, ax

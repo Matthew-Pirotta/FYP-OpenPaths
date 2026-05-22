@@ -20,6 +20,7 @@ def _plot_heatmap(
     annot=True,
     fmt=".2f",
     linewidths=0.5,
+    show = True,
 ):
     fig, ax = plt.subplots(figsize=figsize)
     sns.heatmap(
@@ -37,6 +38,17 @@ def _plot_heatmap(
     for label in ax.get_xticklabels():
         label.set_ha("right")
     fig.tight_layout()
+
+
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
+
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
     return fig, ax
 
 
@@ -80,6 +92,7 @@ def plot_od_sampling_heatmaps(
 ):
     purpose_fig, purpose_ax, purpose_df = plot_outward_purpose_shares_by_dest_region(
         outward_purpose_shares_by_dest_region,
+        show = show,
         **kwargs,
     )
 
@@ -88,10 +101,10 @@ def plot_od_sampling_heatmaps(
 
     region_fig, region_ax, region_df = plot_dest_region_given_origin(
         dest_region_given_origin,
+        show = show,
         **kwargs,
     )
 
-    if show:
-        plt.show()
 
+    
     return (purpose_fig, purpose_ax, purpose_df), (region_fig, region_ax, region_df)

@@ -35,7 +35,7 @@ def plot_elevation(G):
     fig.tight_layout()
     plt.show()
 
-def plot_grades(G):
+def plot_grades(G, show=True):
     grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True)]
 
     cmap = plt.cm.managua_r
@@ -56,7 +56,10 @@ def plot_grades(G):
     ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
 
     fig.tight_layout()
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
     # --- Spatial grade map ---
     edge_colors = [cmap(norm(d.get("grade", 0))) for _, _, _, d in G.edges(keys=True, data=True)]
@@ -68,6 +71,14 @@ def plot_grades(G):
     cbar.set_label("Edge Grade (%)")
 
     ax.set_title("Spatial Grade Map")
-    ax.axis("off")
-    fig.tight_layout()
-    plt.show()
+
+
+    ax.set_axis_off()
+    ax.margins(0)
+    fig.tight_layout(pad=0)
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    return fig, ax

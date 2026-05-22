@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from Demand import ODConstants
 import matplotlib.ticker as mticker
+from pathlib import Path
 
 
 MODEL_STYLES = (
@@ -14,7 +15,10 @@ MODEL_STYLES = (
 MODEL_STYLE_BY_LABEL = dict(MODEL_STYLES)
 
 
-def plot_metrics(df):
+def plot_metrics(df, output_dir="Output/Plots/GraphEvaluation"):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     model_col = _pick_col(df, "model", "heuristic")
     groups = _metric_groups(df, model_col)
 
@@ -55,6 +59,11 @@ def plot_metrics(df):
     else:
         _show_missing_metric(ax1)
     fig1.tight_layout()
+    fig1.savefig(
+        output_dir / "bike_gain_vs_car_harm.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
 
     # Figure 2: Demand-weighted directness over iterations.
     fig2, ax2 = plt.subplots(figsize=(7.5, 4.8))
@@ -66,6 +75,11 @@ def plot_metrics(df):
         ylabel=r"Demand-weighted directness, $D$",
     )
     fig2.tight_layout()
+    fig2.savefig(
+        output_dir / "directness_over_iterations.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
 
     # Figure 3: Protected coverage over iterations.
     fig3, ax3 = plt.subplots(figsize=(7.5, 4.8))
@@ -83,6 +97,11 @@ def plot_metrics(df):
         scale=coverage_scale,
     )
     fig3.tight_layout()
+    fig3.savefig(
+        output_dir / "spatial_coverage_over_iterations.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
 
     # Figure 4: Protected LCC length over iterations.
     fig4, ax4 = plt.subplots(figsize=(7.5, 4.8))
@@ -95,6 +114,11 @@ def plot_metrics(df):
         scale=1.0 / 1000.0,
     )
     fig4.tight_layout()
+    fig4.savefig(
+        output_dir / "protected_lcc_length_over_iterations.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
 
     plt.show()
 
@@ -330,6 +354,8 @@ def plot_od_investigation(
         ax.legend(loc="best")
         plt.tight_layout()
         plt.show()
+    
+    return fig,ax
 
 
 def plot_od_matrix_error(error, title=None):
