@@ -96,7 +96,7 @@ def plot_compare_summary(
 
     fig.tight_layout()
     fig.savefig(
-        output_dir / "sumo_compare_summary.pdf",
+        output_dir / f"{title}.pdf",
         format="pdf",
         bbox_inches="tight",
     )
@@ -116,7 +116,12 @@ def plot_compare_mode(
     *,
     min_value=None,
     xlabel="Time (h)",
+    output_dir="Output/Plots/SumoEvaluation",
 ):
+    
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     fig, ax = plt.subplots(figsize=(8, 5))
     plotted = False
 
@@ -170,5 +175,11 @@ def plot_compare_mode(
 
     fig.tight_layout()
     plt.show()
+
+    fig.savefig(
+        output_dir / f"{title}.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
 
     return fig, ax

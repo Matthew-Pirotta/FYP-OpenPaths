@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.ticker import PercentFormatter
+from pathlib import Path
 
 import osmnx as ox
 from Plotting.utils import color_hist
@@ -35,7 +36,10 @@ def plot_elevation(G):
     fig.tight_layout()
     plt.show()
 
-def plot_grades(G, show=True):
+def plot_grades(G, show=True, save_path="Output/Plots/"):
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    
     grades = [d["grade"] for _, _, _, d in G.edges(keys=True, data=True)]
 
     cmap = plt.cm.managua_r
@@ -55,7 +59,10 @@ def plot_grades(G, show=True):
     )
     ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
 
-    fig.tight_layout()
+    fig.tight_layout(pad=0)
+    fig.savefig(save_path / "DistributionRoadGrades.pdf", format="pdf", bbox_inches="tight")
+
+
     if show:
         plt.show()
     else:
@@ -76,9 +83,14 @@ def plot_grades(G, show=True):
     ax.set_axis_off()
     ax.margins(0)
     fig.tight_layout(pad=0)
+
+        
+    fig.savefig(save_path / "Spatial Grade map.pdf", format="pdf", bbox_inches="tight")
+
     if show:
         plt.show()
     else:
         plt.close(fig)
 
     return fig, ax
+
