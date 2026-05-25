@@ -1,3 +1,8 @@
+"""
+NOTE
+SUMO commands such as `netconvert`, `od2trips`, `duarouter`, and `sumo` must be available on your `PATH`. [`Code/Demand/sumoRun.py`](Code/Demand/sumoRun.py) also references `C:\Program Files (x86)\Eclipse\Sumo\tools\edgesInDistricts.py`, so update that path if SUMO is installed elsewhere.
+"""
+
 import subprocess
 import os
 import sumolib
