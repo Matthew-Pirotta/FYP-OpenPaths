@@ -303,22 +303,6 @@ def _find_bridge_path(
     return best_path, best_cost
 
 
-def _find_closest_component(G: MultiDiGraph, main_component: set, other_components: list[set]):
-    main_centroid = _calc_network_centroid(G, main_component)
-
-    min_dist = float("inf")
-    closest_component = None
-    for comp in other_components:
-        comp_centroid = _calc_network_centroid(G, comp)
-        dist = np.linalg.norm(main_centroid - comp_centroid)
-
-        if dist < min_dist:
-            min_dist = dist
-            closest_component = comp
-
-    return closest_component, min_dist
-
-
 def _components_by_distance(G: MultiDiGraph, source_component: set, target_components: list[set]):
     source_centroid = _calc_network_centroid(G, source_component)
     distances = []
@@ -362,41 +346,6 @@ def _select_bridge_segment(
                 return seg
 
     return first_reallocatable
-
-
-def _connect_components(
-    G_master: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    source_comp: set,
-    target_comp: set,
-    label: str,
-    arc_to_seg: dict | None = None,
-    seg_to_arcs: dict | None = None,
-):
-    path, cost = _find_bridge_path(G_master, source_comp, target_comp)
-    if not path or len(path) < 2:
-        print(f"[{label}] No bridge path found.")
-        return None
-
-    candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
-        G_realloc,
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
-    if not candidate_segments:
-        print(f"[{label}] No reallocatable segments available.")
-        return None
-
-    seg = _select_bridge_segment(
-        G_master,
-        path,
-        set(candidate_segments),
-        arc_to_seg,
-        source_comp,
-        target_comp,
-    )
-    return seg
-
 
 def _connect_nearest_feasible_component(
     G_master: MultiDiGraph,
@@ -456,35 +405,6 @@ def fallback_edge(G_bikeable, G_realloc, candidate_actions: dict | None = None):
     return seg
 
 
-def heuristic_L2S(
-    G_master: MultiDiGraph,
-    G_drive: MultiDiGraph,
-    G_bikeable: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    G_protected: MultiDiGraph,
-    arc_to_seg: dict | None = None,
-    seg_to_arcs: dict | None = None,
-    candidate_actions: dict | None = None,
-) -> tuple:
-    if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
-
-    comps = sorted(nx.weakly_connected_components(G_protected), key=len, reverse=True)
-    if len(comps) < 2:
-        print("Already connected")
-        return None
-
-    return _connect_components(
-        G_master,
-        G_realloc,
-        comps[0],
-        comps[1],
-        "L2S",
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
-
-
 def heuristic_L2C(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -516,84 +436,6 @@ def heuristic_L2C(
         arc_to_seg=arc_to_seg,
         seg_to_arcs=seg_to_arcs,
     )
-
-
-def heuristic_R2C(
-    G_master: MultiDiGraph,
-    G_drive: MultiDiGraph,
-    G_bikeable: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    G_protected: MultiDiGraph,
-    arc_to_seg: dict | None = None,
-    seg_to_arcs: dict | None = None,
-    candidate_actions: dict | None = None,
-    rng=None,
-):
-    if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
-
-    components = list(nx.strongly_connected_components(G_protected))
-    if len(components) < 2:
-        print("Already connected")
-        return None
-
-    random_source = rng if rng is not None else random
-    random_source.shuffle(components)
-
-    random_component = components[0]
-    other_components = components[1:]
-    closest_component, _ = _find_closest_component(G_bikeable, random_component, other_components)
-
-    return _connect_components(
-        G_master,
-        G_realloc,
-        random_component,
-        closest_component,
-        "R2C",
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
-
-
-def heuristic_CC(
-    G_master: MultiDiGraph,
-    G_drive: MultiDiGraph,
-    G_bikeable: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    G_protected: MultiDiGraph,
-    arc_to_seg: dict | None = None,
-    seg_to_arcs: dict | None = None,
-    candidate_actions: dict | None = None,
-):
-    if G_protected.number_of_edges() < 3:
-        return fallback_edge(G_bikeable, G_realloc, candidate_actions=candidate_actions)
-
-    components = list(nx.strongly_connected_components(G_protected))
-    if len(components) < 2:
-        print("Already connected")
-        return None
-
-    min_dist = float("inf")
-    best_pair = (None, None)
-
-    for i, comp in enumerate(components):
-        other_components = components[i + 1:]
-        closest_component, dist = _find_closest_component(G_bikeable, comp, other_components)
-        if closest_component and dist < min_dist:
-            min_dist = dist
-            best_pair = (comp, closest_component)
-
-    comp_a, comp_b = best_pair
-    return _connect_components(
-        G_master,
-        G_realloc,
-        comp_a,
-        comp_b,
-        "CC",
-        arc_to_seg=arc_to_seg,
-        seg_to_arcs=seg_to_arcs,
-    )
-
 
 def _calc_network_centroid(G: MultiDiGraph, nodes: set) -> np.ndarray:
     coords = np.array([[G.nodes[n]["x"], G.nodes[n]["y"]] for n in nodes])
