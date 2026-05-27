@@ -37,42 +37,6 @@ def get_candidate_segments(
     ]
     return candidate_segments, arc_to_seg, seg_to_arcs
 
-
-def normalize_edge_importance_on_candidates(
-    candidate_edges,
-    edge_importance,
-):
-    vals = {e: edge_importance.get(e, 0.0) for e in candidate_edges}
-    max_val = max(vals.values(), default=0.0)
-
-    if max_val <= 0.0:
-        return {e: 0.0 for e in candidate_edges}
-
-    return {e: vals[e] / max_val for e in candidate_edges}
-
-
-def build_balanced_edge_scores(
-    candidate_edges,
-    bike_edge_importance,
-    car_edge_importance,
-    gamma: float = 1.0,
-):
-    bike_norm = normalize_edge_importance_on_candidates(
-        candidate_edges=candidate_edges,
-        edge_importance=bike_edge_importance,
-    )
-    car_norm = normalize_edge_importance_on_candidates(
-        candidate_edges=candidate_edges,
-        edge_importance=car_edge_importance,
-    )
-
-    scores = {}
-    for e in candidate_edges:
-        scores[e] = bike_norm[e] - gamma * car_norm[e]
-
-    return scores
-
-
 def heuristic_od_segment_betweenness(
     G_working: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -122,7 +86,6 @@ def heuristic_od_segment_betweenness(
     return max(seg_scores, key=seg_scores.get)
 
 
-#region topological heuristics
 def heuristic_segment_betweenness_centrality(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
@@ -175,36 +138,6 @@ def heuristic_segment_betweenness_centrality(
                 seg_scores[seg_id] += edge_betweenness_scores.get(arc, 0.0)
 
     return max(seg_scores, key=seg_scores.get) if seg_scores else None
-
-
-def heuristic_edge_closeness_centrality(
-    G_master: MultiDiGraph,
-    G_drive: MultiDiGraph,
-    G_bikeable: MultiDiGraph,
-    G_realloc: MultiDiGraph,
-    G_protected: MultiDiGraph,
-    k_sample=None,
-    seed=SEED,
-) -> tuple:
-    reallocatable_edges = set(G_realloc.edges(keys=True))
-
-    node_close = nx.closeness_centrality(
-        G_bikeable,
-        distance="length",
-        backend="parallel",
-    )
-
-    edge_scores = {}
-    for (u, v, k) in reallocatable_edges:
-        cu = node_close.get(u, 0)
-        cv = node_close.get(v, 0)
-        edge_scores[(u, v, k)] = (cu + cv) / 2
-
-    best_edge = max(edge_scores, key=edge_scores.get)
-    print("Selected edge:", best_edge, "score:", edge_scores[best_edge])
-    return best_edge
-#endregion
-
 
 def heuristic_random(
     G_master: MultiDiGraph,
