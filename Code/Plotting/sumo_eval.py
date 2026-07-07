@@ -96,8 +96,8 @@ def plot_compare_summary(
 
     fig.tight_layout()
     fig.savefig(
-        output_dir / f"{title}.pdf",
-        format="pdf",
+        output_dir / f"{title}.svg",
+        format="svg",
         bbox_inches="tight",
     )
 

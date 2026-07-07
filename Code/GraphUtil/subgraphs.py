@@ -37,11 +37,11 @@ def make_plotting_subgraph(G: MultiDiGraph) -> MultiDiGraph:
 
 def make_region_subgraph(G: MultiDiGraph, region: str) -> MultiDiGraph:
     """Subgraph containing all edges that intersect the given region."""
-    return _filter_edges(G, lambda d: region in d.get("regions"))
+    return _filter_edges(G, lambda d: _contains_attr(d.get("regions"), region))
 
 
 def make_locality_subgraph(G: MultiDiGraph, locality) -> MultiDiGraph:
-    return _filter_edges(G, lambda d: locality in d.get("localities"))
+    return _filter_edges(G, lambda d: _contains_attr(d.get("localities"), locality))
 
 
 def make_highway_subgraph(
@@ -65,3 +65,16 @@ def _filter_edges(G: MultiDiGraph, condition) -> MultiDiGraph:
         if condition(d)
     ]
     return G.edge_subgraph(edges).copy()
+
+
+def _contains_attr(value, target) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return value == target
+
+    try:
+        return target in value
+    except TypeError:
+        return False

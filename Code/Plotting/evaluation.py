@@ -60,8 +60,8 @@ def plot_metrics(df, output_dir="Output/Plots/GraphEvaluation"):
         _show_missing_metric(ax1)
     fig1.tight_layout()
     fig1.savefig(
-        output_dir / "bike_gain_vs_car_harm.pdf",
-        format="pdf",
+        output_dir / "bike_gain_vs_car_harm_svg.svg",
+        format="svg",
         bbox_inches="tight",
     )
 

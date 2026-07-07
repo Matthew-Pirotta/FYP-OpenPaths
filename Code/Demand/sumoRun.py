@@ -1,8 +1,3 @@
-"""
-NOTE
-SUMO commands such as `netconvert`, `od2trips`, `duarouter`, and `sumo` must be available on your `PATH`. [`Code/Demand/sumoRun.py`](Code/Demand/sumoRun.py) also references `C:\Program Files (x86)\Eclipse\Sumo\tools\edgesInDistricts.py`, so update that path if SUMO is installed elsewhere.
-"""
-
 import subprocess
 import os
 import sumolib
@@ -12,6 +7,7 @@ import xml.etree.ElementTree as ET
 def build_network(sim_dir, simulation_name, verbose):
     # 1. NETCONVERT — Convert OSM → SUMO network
     print("Running netconvert")
+    print("new")
     subprocess.run([
         "netconvert",
         "--osm-files", f"{simulation_name}.osm",
@@ -22,6 +18,7 @@ def build_network(sim_dir, simulation_name, verbose):
         "--plain-output-prefix", f"{simulation_name}_plain",
         "--ramps.guess",
         "--junctions.join",
+        "--junctions.join-dist", "20",
         "--tls.guess-signals",
         "--tls.discard-simple",
         "--tls.join",
