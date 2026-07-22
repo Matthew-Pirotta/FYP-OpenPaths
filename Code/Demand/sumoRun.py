@@ -140,7 +140,7 @@ def run_router(sim_dir, simulation_name, mode, verbose):
         "-r", f"trips_{mode}.xml",
         "--vtype-output", "vtypes_tmp.xml",
         "--additional-files", "../types.add.xml",
-        # "--weights.random-factor", "1.5" #TODO
+        "--weights.random-factor", "1.5", #This allows some variation within the routing so that not everyone takes the same path
         "--repair", "true",
         "--repair.from", "true",
         "--repair.to", "true",
