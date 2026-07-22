@@ -128,13 +128,13 @@ def audit_elevation_and_grade(G, label=""):
         print("sample bad edges:", bad_edges[:10])
 
 
-def clean_simplified_graph(G:MultiDiGraph, place_name):
+def clean_simplified_graph(G:MultiDiGraph, place_name, use_elevation_api:bool = True):
     """Merges semantically equivalent road tags and collapses road tag lists into just the most prominent one. Also projects the graph to have length in meters"""
 
     #NOTE that manual projection does not need to be done for length as the add_edge_lengths function is called automatically by the graph graph_from_x functions
 
     # --------------------
-    G = clean_input_data.add_elevation_data(G)
+    G = clean_input_data.add_elevation_data(G, use_api=use_elevation_api)
     G = clean_input_data.impute_missing_elevation(G)
 
     clean_input_data.merge_semantically_equivalent_road_tags(G)
@@ -162,8 +162,15 @@ def clean_simplified_graph(G:MultiDiGraph, place_name):
     return G, gdf_regions_proj, gdf_local_proj
 
 
-def clean_unsimplified_graph(G:MultiDiGraph):
+def clean_unsimplified_graph(G:MultiDiGraph, use_elevation_api:bool = True):
     G = clean_input_data.set_roundabouts_oneway(G)
     clean_input_data.ensure_edge_geometries(G)
+
+    G = clean_input_data.add_elevation_data(G, use_api=use_elevation_api)
+    G = clean_input_data.impute_missing_elevation(G)
+    G = clean_input_data.add_grades(G)
+
+    enrich_attributes.bike_safety_classification(G)
+    impedance_calculator.update_bike_costs(G)
 
     return G

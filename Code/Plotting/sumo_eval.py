@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.ticker import FuncFormatter, MultipleLocator
 from Plotting.evaluation import MODEL_STYLE_BY_LABEL, MODEL_STYLES
 from pathlib import Path
@@ -183,3 +184,101 @@ def plot_compare_mode(
     )
 
     return fig, ax
+
+
+def plot_mean_perceived_bike_trip_length(
+    results,
+    *,
+    result_key="bike_perceived",
+    metric="perceived_length_m",
+    scale=1 / 1000,
+    ylabel="Mean perceived bike trip length (km)",
+    title="Mean Perceived Bike Trip Length",
+    output_dir="Output/Plots/SumoEvaluation",
+):
+    """Compare the mean perceived bicycle trip length between scenarios.
+
+    Parameters
+    ----------
+    results : mapping
+        The same nested results mapping accepted by ``plot_compare_summary``
+        and ``plot_compare_mode``. Each scenario must contain a DataFrame under
+        ``result_key``.
+    result_key : str
+        Key containing the per-bike perceived trip-length DataFrame.
+    metric : str
+        Column containing the perceived trip cost. By default this is the
+        metre-equivalent cost loaded from the bicycle route file.
+    scale : float
+        Applied after calculating each scenario mean. The default converts
+        metres to kilometres.
+
+    Returns
+    -------
+    (pandas.DataFrame, matplotlib.axes.Axes)
+        The plotted scenario summary and axes. ``trip_count`` is included so
+        the number of bicycle trips behind every mean remains visible.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    colors = []
+
+    for idx, (scenario, data) in enumerate(results.items()):
+        df = get_result_df(data, result_key)
+
+        if df is None:
+            print(f"Skipping {scenario}: no '{result_key}' dataframe")
+            continue
+
+        if metric not in df.columns:
+            print(
+                f"Skipping {scenario}: {result_key} has no column '{metric}'"
+            )
+            continue
+
+        values = pd.to_numeric(df[metric], errors="coerce").dropna()
+        if values.empty:
+            print(f"Skipping {scenario}: '{metric}' contains no valid values")
+            continue
+
+        mean_m = values.mean()
+        rows.append({
+            "scenario": str(scenario),
+            "trip_count": len(values),
+            "mean_perceived_length_m": mean_m,
+            "mean_perceived_length_km": mean_m / 1000,
+            "plotted_mean": mean_m * scale,
+        })
+        colors.append(get_model_style(scenario, idx).get("color", f"C{idx % 10}"))
+
+    summary = pd.DataFrame(rows)
+    if summary.empty:
+        raise ValueError(
+            f"No valid '{metric}' data was found under result key "
+            f"'{result_key}'"
+        )
+
+    fig, ax = plt.subplots(figsize=(max(6, 1.4 * len(summary)), 4.5))
+
+    bars = ax.bar(
+        summary["scenario"],
+        summary["plotted_mean"],
+        color=colors,
+    )
+    ax.bar_label(bars, fmt="%.2f", padding=3)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("Scenario")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.25)
+    ax.tick_params(axis="x", rotation=15)
+    fig.tight_layout()
+    fig.savefig(
+        output_dir / f"{title}.pdf",
+        format="pdf",
+        bbox_inches="tight",
+    )
+    plt.show()
+
+    return summary, ax

@@ -6,6 +6,8 @@ from constants import SafetyClass
 from . import tag_utils
 from shapely.geometry import LineString
 import constants
+import time
+from requests.exceptions import ReadTimeout, ConnectionError
 
 
 #region road tags
@@ -132,13 +134,22 @@ def ensure_edge_geometries(G:MultiDiGraph):
 
 
 
-#region Grade
-def add_elevation_data(G:MultiDiGraph, batch_size = 100, pause = 5) -> MultiDiGraph:
+
+def add_elevation_data(G: MultiDiGraph, batch_size=100, pause=5, use_api=True, default_elevation=0) -> MultiDiGraph:
+    if not use_api:
+        print(
+            "WARNING: add_elevation_data() is using a DEFAULT elevation value "
+            f"({default_elevation}) instead of calling the API. "
+            "This should ONLY be used for development/testing — "
+            "do NOT use this for real analysis or final results."
+        )
+        nx.set_node_attributes(G, default_elevation, "elevation")
+        return G
+
     print("Adding elevation data.....")
     ox.settings.elevation_url_template = (
-    "https://api.opentopodata.org/v1/eudem25m?locations={locations}"
+        "https://api.opentopodata.org/v1/eudem25m?locations={locations}"
     )
-
     G = ox.add_node_elevations_google(G, batch_size=batch_size, pause=pause)
 
     return G
