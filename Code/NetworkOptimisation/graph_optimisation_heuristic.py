@@ -17,6 +17,9 @@ def _keep_arc_policy_for_heuristic(heuristic_func):
     name = heuristic_func.__name__
 
     if name in {
+        "heuristic_segment_betweenness_bike_centrality",
+        "heuristic_segment_betweenness_bike_car_aware",
+        "heuristic_segment_betweenness_od_aware",
         "heuristic_segment_betweenness_centrality",
         "heuristic_od_segment_betweenness",
     }:
@@ -38,12 +41,12 @@ def _keep_arc_scores_for_heuristic(
     """
     name = heuristic_func.__name__
 
-    if name == "heuristic_od_segment_betweenness":
+    if name in {"heuristic_od_segment_betweenness", "heuristic_segment_betweenness_od_aware", "heuristic_segment_betweenness_bike_car_aware"}:
         # Keep the car direction with the larger OD car importance, so the
         # marginal car harm counts the less important direction as lost.
         return car_edge_importance
 
-    if name == "heuristic_segment_betweenness_centrality":
+    if name in {"heuristic_segment_betweenness_centrality", "heuristic_segment_betweenness_bike_centrality"}:
         return edge_betweenness_scores
 
     return None
@@ -315,7 +318,7 @@ def _refresh_heuristic_cache(
     """
     heuristic_name = heuristic_func.__name__
 
-    if heuristic_name == "heuristic_od_segment_betweenness":
+    if heuristic_name in {"heuristic_od_segment_betweenness", "heuristic_segment_betweenness_od_aware", "heuristic_segment_betweenness_bike_car_aware"}:
         refresh_paths = (
             cache.bike_paths is None
             or cache.car_paths is None
@@ -345,7 +348,7 @@ def _refresh_heuristic_cache(
                 "car_cost_current"
             )
 
-    if heuristic_name == "heuristic_segment_betweenness_centrality":
+    if heuristic_name in {"heuristic_segment_betweenness_centrality", "heuristic_segment_betweenness_bike_centrality", "heuristic_segment_betweenness_bike_car_aware"}:
         refresh_paths = (
             cache.bike_edge_betweenness_scores is None
             or iteration % EVALUATION_MOD == 0

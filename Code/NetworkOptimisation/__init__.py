@@ -7,6 +7,9 @@ from .heuristic import (
     heuristic_L2C,
     heuristic_od_segment_betweenness,
     heuristic_random,
+    heuristic_segment_betweenness_bike_car_aware,
+    heuristic_segment_betweenness_bike_centrality,
+    heuristic_segment_betweenness_od_aware,
     heuristic_segment_betweenness_centrality,
 )
 from .impedance_calculator import update_bike_costs, update_car_costs
@@ -23,6 +26,9 @@ __all__ = [
     "heuristic_L2C",
     "heuristic_od_segment_betweenness",
     "heuristic_random",
+    "heuristic_segment_betweenness_bike_car_aware",
+    "heuristic_segment_betweenness_bike_centrality",
+    "heuristic_segment_betweenness_od_aware",
     "heuristic_segment_betweenness_centrality",
     "update_bike_costs",
     "update_car_costs",

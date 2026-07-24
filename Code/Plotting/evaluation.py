@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 MODEL_STYLES = (
-    ("edge_betweenness", {"color": "tab:blue", "linestyle": "-", "marker": "o"}),
+    ("edge_betweenness_bike_centrality", {"color": "tab:blue", "linestyle": "-", "marker": "o"}),
+    ("edge_betweenness_bike_car_aware", {"color": "tab:brown", "linestyle": "--", "marker": "P"}),
     ("L2C", {"color": "tab:orange", "linestyle": "--", "marker": "s"}),
     ("OD_betweenness", {"color": "tab:green", "linestyle": ":", "marker": "^"}),
     ("Random", {"color": "tab:red", "linestyle": "-.", "marker": "D"}),

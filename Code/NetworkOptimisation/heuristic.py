@@ -1,15 +1,15 @@
 import random
-from networkx import MultiDiGraph, display
-from sympy import centroid
+from networkx import MultiDiGraph
+
 import GraphUtil as graph_util
-import osmnx as ox
+
 import networkx as nx
 import numpy as np
-import geopandas as gpd
-from shapely.geometry import Point
-from shapely.ops import unary_union
+
+
+
 from Demand import paths_util
-import nx_parallel
+
 from collections import defaultdict
 
 SEED = 12
@@ -37,7 +37,16 @@ def get_candidate_segments(
     ]
     return candidate_segments, arc_to_seg, seg_to_arcs
 
-def heuristic_od_segment_betweenness(
+def _segment_arcs_for_scoring(seg_id, candidate_actions, seg_to_arcs):
+    if candidate_actions is None:
+        arcs = seg_to_arcs[seg_id]
+        return arcs, arcs
+
+    action = candidate_actions[seg_id]
+    return action.bike_arcs, action.lost_car_arcs
+
+
+def heuristic_segment_betweenness_od_aware(
     G_working: MultiDiGraph,
     G_drive: MultiDiGraph,
     G_bikeable: MultiDiGraph,
@@ -65,19 +74,25 @@ def heuristic_od_segment_betweenness(
         return None
 
     if bike_edge_importance is None:
-        bike_edge_importance = paths_util.compute_edge_importance(G_bikeable, bike_paths, "bike_cost_penalty", )
+        bike_edge_importance = paths_util.compute_edge_importance(
+            G_bikeable,
+            bike_paths,
+            "bike_cost_penalty",
+        )
     if car_edge_importance is None:
-        car_edge_importance = paths_util.compute_edge_importance(G_drive, car_paths, "car_cost_current",)
+        car_edge_importance = paths_util.compute_edge_importance(
+            G_drive,
+            car_paths,
+            "car_cost_current",
+        )
 
     seg_scores = {}
     for seg_id in candidate_segments:
-        if candidate_actions is None:
-            bike_arcs = seg_to_arcs[seg_id]
-            lost_car_arcs = seg_to_arcs[seg_id]
-        else:
-            action = candidate_actions[seg_id]
-            bike_arcs = action.bike_arcs
-            lost_car_arcs = action.lost_car_arcs
+        bike_arcs, lost_car_arcs = _segment_arcs_for_scoring(
+            seg_id,
+            candidate_actions,
+            seg_to_arcs,
+        )
 
         bike_score = sum(bike_edge_importance.get(arc, 0.0) for arc in bike_arcs)
         car_score = sum(car_edge_importance.get(arc, 0.0) for arc in lost_car_arcs)
@@ -86,7 +101,7 @@ def heuristic_od_segment_betweenness(
     return max(seg_scores, key=seg_scores.get)
 
 
-def heuristic_segment_betweenness_centrality(
+def heuristic_segment_betweenness_bike_centrality(
     G_master: MultiDiGraph,
     G_drive: MultiDiGraph,
     G_bikeable: MultiDiGraph,
@@ -138,6 +153,73 @@ def heuristic_segment_betweenness_centrality(
                 seg_scores[seg_id] += edge_betweenness_scores.get(arc, 0.0)
 
     return max(seg_scores, key=seg_scores.get) if seg_scores else None
+
+
+def heuristic_segment_betweenness_bike_car_aware(
+    G_master: MultiDiGraph,
+    G_drive: MultiDiGraph,
+    G_bikeable: MultiDiGraph,
+    G_realloc: MultiDiGraph,
+    G_protected: MultiDiGraph,
+    car_paths,
+    beta: float = 1.0,
+    k_sample=None,
+    seed=SEED,
+    arc_to_seg: dict | None = None,
+    seg_to_arcs: dict | None = None,
+    bike_edge_betweenness_scores: dict | None = None,
+    car_edge_importance: dict | None = None,
+    candidate_actions: dict | None = None,
+):
+    if candidate_actions is None:
+        candidate_segments, arc_to_seg, seg_to_arcs = get_candidate_segments(
+            G_realloc,
+            arc_to_seg=arc_to_seg,
+            seg_to_arcs=seg_to_arcs,
+        )
+    else:
+        candidate_segments = list(candidate_actions)
+
+    if not candidate_segments:
+        return None
+
+    if k_sample is not None:
+        k_sample = min(G_bikeable.number_of_nodes(), k_sample)
+
+    if bike_edge_betweenness_scores is None:
+        bike_edge_betweenness_scores = nx.edge_betweenness_centrality(
+            G_bikeable,
+            weight="bike_cost_penalty",
+            normalized=True,
+            k=k_sample,
+            seed=seed,
+            backend="parallel",
+        )
+
+    if car_edge_importance is None:
+        car_edge_importance = paths_util.compute_edge_importance(
+            G_drive,
+            car_paths,
+            "car_cost_current",
+        )
+
+    seg_scores = {}
+    for seg_id in candidate_segments:
+        bike_arcs, lost_car_arcs = _segment_arcs_for_scoring(
+            seg_id,
+            candidate_actions,
+            seg_to_arcs,
+        )
+
+        bike_score = sum(bike_edge_betweenness_scores.get(arc, 0.0) for arc in bike_arcs)
+        car_score = sum(car_edge_importance.get(arc, 0.0) for arc in lost_car_arcs)
+        seg_scores[seg_id] = bike_score - beta * car_score
+
+    return max(seg_scores, key=seg_scores.get)
+
+
+heuristic_od_segment_betweenness = heuristic_segment_betweenness_od_aware
+heuristic_segment_betweenness_centrality = heuristic_segment_betweenness_bike_centrality
 
 def heuristic_random(
     G_master: MultiDiGraph,
@@ -326,7 +408,7 @@ def fallback_edge(G_bikeable, G_realloc, candidate_actions: dict | None = None):
     Fallback for when protected network is too small.
     Keeps previous behaviour: use betweenness-based fallback.
     """
-    seg = heuristic_segment_betweenness_centrality(
+    seg = heuristic_segment_betweenness_bike_centrality(
         None,
         None,
         G_bikeable,
@@ -372,6 +454,9 @@ def heuristic_L2C(
 
 def _calc_network_centroid(G: MultiDiGraph, nodes: set) -> np.ndarray:
     coords = np.array([[G.nodes[n]["x"], G.nodes[n]["y"]] for n in nodes])
-    centroid = coords.mean(axis=0)
-    return centroid
+    network_centroid = coords.mean(axis=0)
+    return network_centroid
 #endregion
+
+
+
